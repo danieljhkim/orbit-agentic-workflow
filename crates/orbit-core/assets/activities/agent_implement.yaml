@@ -46,29 +46,51 @@ spec:
        override the task snapshot's paths.
     5. Implement only the task's scoped work. If a blocker appears, add a task
        comment with `orbit.task.update` before stopping.
-    6. Respect repository instructions for validation. If tests are forbidden,
+       Touching any file not named in `context_files` or required as a direct
+       dependency of those edits is scope drift. If you find such a file needs
+       changing, surface it as a task comment via `orbit.task.update` and stop —
+       do not change it silently. Deletions of unrelated artifacts (learnings,
+       ADRs, design docs, fixtures) are scope drift even when they look like
+       cleanup.
+    6. If implementing the task requires duplicating more than ~50 LOC of helper
+       code between crates, either (a) lift the shared portion to the appropriate
+       common crate (`orbit-common` or another existing shared crate) in this PR,
+       or (b) file a follow-up task with `orbit.task.add` and cite its ID in the
+       ADR's Consequences section. Do not characterize duplication of >50 LOC as
+       "minor" without surfacing the alternative as a rejected option in the ADR.
+    7. Do not add `#[allow(dead_code)]` or `#[allow(unused_imports)]` to suppress
+       warnings on items that became unused because the task moved them out.
+       Either delete the item in this PR, or surface a concrete reason it must
+       remain (e.g., another caller still depends on it) as a task comment.
+       `#[allow(dead_code)]` is for items the compiler can't see being used
+       (FFI, macro-generated), not for parked technical debt.
+    8. Any new third-party dependency must be registered in `[workspace.dependencies]`
+       at the root `Cargo.toml` and referenced as `<crate>.workspace = true` in
+       the consuming crate's manifest. Direct-pinned versions in crate manifests
+       (e.g., `serde = "1"` instead of `serde.workspace = true`) fail PR review.
+    9. Respect repository instructions for validation. If tests are forbidden,
        do not add or run them. Use the smallest allowed validation that gives
        real confidence.
-    7. Before handoff, run the learning checkpoint: if this task surfaced a
-       contradicted assumption, recurring failure mode, non-obvious gotcha that
-       took more than 10 minutes to debug, or incident-style root cause, follow
-       the `orbit-learning` skill and call the `add` action on
-       `orbit.learning` (or use that skill's update/supersede flow when it
-       points to existing guidance).
-       Skip if none apply.
-    8. The task is already in `in-progress` status when this activity fires
-       (the engine performed workflow admission via `admit_task_for_workflow`
-       during worktree setup, before dispatching the implement step). Do **not**
-       call `orbit.task.start` — this envelope rule overrides the direct-execution
-       start step described in the `orbit-execute-task` skill's Step 3. Proceed
-       directly to implementation.
-    9. Persist an execution summary when useful, but do not move the task to
-       `review`; the pipeline does that only after commit/merge or PR steps
-       succeed. This envelope rule overrides the direct-execution review
-       transition described in the `orbit-execute-task` skill's Step 5 and Exit
-       Criteria.
-    10. Return a short structured summary. Include a `diff` string only when you
-       can produce it cheaply and accurately.
+    10. Before handoff, run the learning checkpoint: if this task surfaced a
+        contradicted assumption, recurring failure mode, non-obvious gotcha that
+        took more than 10 minutes to debug, or incident-style root cause, follow
+        the `orbit-learning` skill and call the `add` action on
+        `orbit.learning` (or use that skill's update/supersede flow when it
+        points to existing guidance).
+        Skip if none apply.
+    11. The task is already in `in-progress` status when this activity fires
+        (the engine performed workflow admission via `admit_task_for_workflow`
+        during worktree setup, before dispatching the implement step). Do **not**
+        call `orbit.task.start` — this envelope rule overrides the direct-execution
+        start step described in the `orbit-execute-task` skill's Step 3. Proceed
+        directly to implementation.
+    12. Persist an execution summary when useful, but do not move the task to
+        `review`; the pipeline does that only after commit/merge or PR steps
+        succeed. This envelope rule overrides the direct-execution review
+        transition described in the `orbit-execute-task` skill's Step 5 and Exit
+        Criteria.
+    13. Return a short structured summary. Include a `diff` string only when you
+        can produce it cheaply and accurately.
   tools:
     - orbit.task.*
     - orbit.friction.*
