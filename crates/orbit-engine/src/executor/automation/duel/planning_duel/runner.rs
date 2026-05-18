@@ -107,7 +107,21 @@ pub(crate) fn run_planning_duel<H: RuntimeHost + TaskHost + Sync + ?Sized>(
 
     artifacts::cleanup_stale_planning_duel_artifacts(host, task_id)?;
 
-    let roles_output = roles::select_planning_duel_roles(host, &json!({ "task_id": task_id }))?;
+    let roles_input = {
+        let mut m = serde_json::Map::new();
+        m.insert("task_id".to_string(), json!(task_id));
+        if let Some(v) = input_string_field(input, "planner_a_family") {
+            m.insert("planner_a_family".to_string(), json!(v));
+        }
+        if let Some(v) = input_string_field(input, "planner_b_family") {
+            m.insert("planner_b_family".to_string(), json!(v));
+        }
+        if let Some(v) = input_string_field(input, "arbiter_family") {
+            m.insert("arbiter_family".to_string(), json!(v));
+        }
+        Value::Object(m)
+    };
+    let roles_output = roles::select_planning_duel_roles(host, &roles_input)?;
     let planning_roles = roles::parse_planning_duel_roles(&roles_output)?;
 
     let planner_activity = roles::planner_activity();
