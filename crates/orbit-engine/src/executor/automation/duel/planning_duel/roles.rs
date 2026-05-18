@@ -325,19 +325,73 @@ pub(super) fn select_planning_duel_roles<H: RuntimeHost + ?Sized>(
     input: &Value,
 ) -> Result<Value, OrbitError> {
     let task_id = required_input_string(input, "task_id")?;
-    let perm = next_permutation(host)?;
-    let output = build_roles_output(host, perm)?;
+
+    let pa = input_string_field(input, "planner_a_family");
+    let pb = input_string_field(input, "planner_b_family");
+    let ar = input_string_field(input, "arbiter_family");
+
+    let roles_output = if let (Some(a), Some(b), Some(c)) =
+        (pa.as_deref(), pb.as_deref(), ar.as_deref())
+    {
+        // explicit assignment path (CLI or direct workflow); all-or-nothing already enforced by caller,
+        // but defend here for partial YAML / direct activity calls
+        if a == b || a == c || b == c {
+            let dup = if a == b || a == c { a } else { b };
+            return Err(OrbitError::InvalidInput(format!(
+                "select_planning_duel_roles explicit roles must use distinct families; '{dup}' appears more than once"
+            )));
+        }
+
+        let families = host.duel_candidate_families();
+        let ia = families.iter().position(|f| f == a).ok_or_else(|| {
+            OrbitError::InvalidInput(format!(
+                "planner_a_family value '{a}' is not in [duel] candidates {families:?}"
+            ))
+        })?;
+        let ib = families.iter().position(|f| f == b).ok_or_else(|| {
+            OrbitError::InvalidInput(format!(
+                "planner_b_family value '{b}' is not in [duel] candidates {families:?}"
+            ))
+        })?;
+        let ic = families.iter().position(|f| f == c).ok_or_else(|| {
+            OrbitError::InvalidInput(format!(
+                "arbiter_family value '{c}' is not in [duel] candidates {families:?}"
+            ))
+        })?;
+
+        let perm = [ia, ib, ic];
+        validate_role_permutation(perm, families.len(), "select_planning_duel_roles")?;
+        build_roles_output(host, perm)?
+    } else if pa.is_some() || pb.is_some() || ar.is_some() {
+        let mut missing = vec![];
+        if pa.is_none() {
+            missing.push("planner_a_family");
+        }
+        if pb.is_none() {
+            missing.push("planner_b_family");
+        }
+        if ar.is_none() {
+            missing.push("arbiter_family");
+        }
+        return Err(OrbitError::InvalidInput(format!(
+            "select_planning_duel_roles explicit roles require all three of planner_a_family, planner_b_family, arbiter_family; missing {}",
+            missing.join(", ")
+        )));
+    } else {
+        let perm = next_permutation(host)?;
+        build_roles_output(host, perm)?
+    };
 
     Ok(json!({
         "task_id": task_id,
-        "planning_duel_started_at": output["planning_duel_started_at"].clone(),
-        "planner_a_agent_cli": output["planner_a_agent_cli"].clone(),
-        "planner_a_model": output["planner_a_model"].clone(),
-        "planner_b_agent_cli": output["planner_b_agent_cli"].clone(),
-        "planner_b_model": output["planner_b_model"].clone(),
-        "arbiter_agent_cli": output["arbiter_agent_cli"].clone(),
-        "arbiter_model": output["arbiter_model"].clone(),
-        "planning_duel_roles": output["planning_duel_roles"].clone(),
+        "planning_duel_started_at": roles_output["planning_duel_started_at"].clone(),
+        "planner_a_agent_cli": roles_output["planner_a_agent_cli"].clone(),
+        "planner_a_model": roles_output["planner_a_model"].clone(),
+        "planner_b_agent_cli": roles_output["planner_b_agent_cli"].clone(),
+        "planner_b_model": roles_output["planner_b_model"].clone(),
+        "arbiter_agent_cli": roles_output["arbiter_agent_cli"].clone(),
+        "arbiter_model": roles_output["arbiter_model"].clone(),
+        "planning_duel_roles": roles_output["planning_duel_roles"].clone(),
     }))
 }
 
@@ -618,5 +672,50 @@ mod tests {
         };
         assert!(msg.contains("expected gemini"), "msg={msg}");
         assert!(msg.contains("has family claude"), "msg={msg}");
+    }
+
+    #[test]
+    fn planning_duel_roles_explicit_assignment_returns_requested_families_without_permutation_queue()
+     {
+        // Explicit families provided in input; must NOT require seeding TEST_PERMUTATION_QUEUE
+        // and must bypass next_permutation entirely.
+        let host = TestHost::new();
+        let input = json!({
+            "task_id": "ORB-TEST-EXPLICIT",
+            "planner_a_family": "gemini",
+            "planner_b_family": "codex",
+            "arbiter_family": "grok"
+        });
+
+        let output = select_planning_duel_roles(&host, &input)
+            .expect("explicit assignment path succeeds without queue");
+
+        assert_eq!(output["planner_a_agent_cli"], "gemini");
+        assert_eq!(output["planner_b_agent_cli"], "codex");
+        assert_eq!(output["arbiter_agent_cli"], "grok");
+        assert_eq!(
+            output["planning_duel_roles"]["planner_a"]["family"],
+            "gemini"
+        );
+        assert_eq!(
+            output["planning_duel_roles"]["planner_b"]["family"],
+            "codex"
+        );
+        assert_eq!(output["planning_duel_roles"]["arbiter"]["family"], "grok");
+    }
+
+    #[test]
+    fn planning_duel_roles_no_override_still_uses_queued_permutation_path() {
+        // No override fields -> must still go through next_permutation (test seeds queue)
+        queue_permutation([0, 2, 3]); // codex, gemini, grok
+        let host = TestHost::new();
+        let input = json!({ "task_id": "ORB-TEST-NO-OVERRIDE" });
+
+        let output =
+            select_planning_duel_roles(&host, &input).expect("no-override still uses permutation");
+
+        assert_eq!(output["planner_a_agent_cli"], "codex");
+        assert_eq!(output["planner_b_agent_cli"], "gemini");
+        assert_eq!(output["arbiter_agent_cli"], "grok");
     }
 }

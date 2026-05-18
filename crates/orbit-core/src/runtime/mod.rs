@@ -245,6 +245,12 @@ impl OrbitRuntime {
         self.context.workflow_base_branch()
     }
 
+    /// Returns the configured `[duel] candidates` list (e.g. ["codex", "claude", "gemini", "grok"]).
+    /// Used by `orbit run duel-plan --planner-a ...` overrides to validate explicit families.
+    pub fn duel_candidate_families(&self) -> Vec<String> {
+        self.context.duel_config().candidates.clone()
+    }
+
     pub(crate) fn duel_config(&self) -> &crate::config::DuelConfig {
         self.context.duel_config()
     }
