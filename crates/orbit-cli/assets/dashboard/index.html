@@ -204,7 +204,7 @@
       #learning-search,
       #adr-search,
       #friction-search {
-        flex: 1 1 200px;
+        flex: 0 1 280px;
         min-width: 160px;
         background: var(--bg);
         color: var(--fg);
@@ -229,7 +229,7 @@
         display: flex;
         gap: 6px;
         flex-wrap: wrap;
-        max-width: 480px;
+        max-width: none;
       }
       
       .chip {
@@ -1531,6 +1531,53 @@
       table.scoreboard-table td.agent.clickable { cursor: pointer; }
       table.scoreboard-table td.agent.clickable:hover { color: var(--accent); }
 
+      /* Audit & Diagnostics Summary Cards */
+      .audit-summary-card {
+        background: var(--bg-elev);
+        border: 1px solid var(--border);
+        border-radius: 4px;
+        overflow: hidden;
+      }
+      .audit-summary-card .card-title {
+        font-family: var(--font-sans);
+        font-size: 11px;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        color: var(--fg-dim);
+        padding: 10px 12px;
+        border-bottom: 1px solid var(--border);
+        background: rgba(255, 255, 255, 0.02);
+      }
+      .audit-summary-card .card-body {
+        padding: 0;
+      }
+      .summary-table {
+        width: 100%;
+        border-collapse: collapse;
+        font-family: var(--font-mono);
+        font-size: 11px;
+      }
+      .summary-table th {
+        text-align: left;
+        color: var(--fg-dim);
+        font-weight: normal;
+        padding: 6px 12px;
+        border-bottom: 1px solid var(--border);
+      }
+      .summary-table td {
+        padding: 6px 12px;
+        color: var(--fg);
+        border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .summary-table tr:last-child td { border-bottom: none; }
+      .summary-table th.num, .summary-table td.num { text-align: right; }
+      .summary-table tr.clickable { cursor: pointer; }
+      .summary-table tr.clickable:hover td { background: rgba(110, 159, 255, 0.08); color: var(--accent-hover); }
+
       /* Run Detail — Gantt timeline */
       .gantt-panel {
         padding: 12px 16px 16px 16px;
@@ -2099,31 +2146,40 @@
       </main>
     </section>
     <section class="tab-pane" data-tab="audit">
-      <main style="grid-template-columns: 1fr;">
-        <section class="panel" id="audit-pane">
-          <header><span id="audit-title">Audit Events</span><span class="count" id="audit-count">-</span></header>
-          <nav class="subtabs" id="audit-subtabs">
-            <button class="subtab" data-subtab="events" type="button">Events</button>
-            <button class="subtab" data-subtab="policy" type="button">Policy</button>
-          </nav>
-          <div class="controls" id="audit-events-controls">
-            <input type="search" id="audit-search" placeholder="Search command, tool, target..." autocomplete="off" spellcheck="false" />
-            <div id="audit-filter"></div>
-          </div>
-          <div class="body scoreboard-table-wrap" id="audit-body">
-            <div class="skeleton-state">
-              <div class="skeleton skeleton-row"></div>
-              <div class="skeleton skeleton-row" style="width: 80%"></div>
-              <div class="skeleton skeleton-row" style="width: 70%"></div>
+      <main class="tasks-layout" style="grid-template-columns: minmax(0, 2fr) minmax(280px, 1.15fr);">
+        <div style="display: flex; flex-direction: column; min-width: 0;">
+          <section class="panel" id="audit-pane">
+            <header><span id="audit-title">Audit Events</span><span class="count" id="audit-count">-</span></header>
+            <nav class="subtabs" id="audit-subtabs">
+              <button class="subtab" data-subtab="events" type="button">Events</button>
+              <button class="subtab" data-subtab="policy" type="button">Policy</button>
+            </nav>
+            <div class="controls" id="audit-events-controls">
+              <input type="search" id="audit-search" placeholder="Search command, tool, target..." autocomplete="off" spellcheck="false" />
+              <div id="audit-filter"></div>
             </div>
-          </div>
-          <div class="body" id="audit-policy-body" style="display: none;">
-            <div class="skeleton-state">
-              <div class="skeleton skeleton-row"></div>
-              <div class="skeleton skeleton-row" style="width: 80%"></div>
+            <div class="body scoreboard-table-wrap" id="audit-body">
+              <div class="skeleton-state">
+                <div class="skeleton skeleton-row"></div>
+                <div class="skeleton skeleton-row" style="width: 80%"></div>
+                <div class="skeleton skeleton-row" style="width: 70%"></div>
+              </div>
             </div>
-          </div>
-        </section>
+            <div class="body" id="audit-policy-body" style="display: none;">
+              <div class="skeleton-state">
+                <div class="skeleton skeleton-row"></div>
+                <div class="skeleton skeleton-row" style="width: 80%"></div>
+              </div>
+            </div>
+          </section>
+        </div>
+        <div style="display: flex; flex-direction: column; min-width: 0;">
+          <section class="panel" id="audit-summary-panel">
+            <header><span>Audit Summary 24h</span></header>
+            <div class="body" id="audit-summary-body" style="padding: 16px; display: flex; flex-direction: column; gap: 16px; overflow-y: auto; background: var(--bg);">
+            </div>
+          </section>
+        </div>
       </main>
     </section>
     <section class="tab-pane" data-tab="run-detail">
@@ -2151,30 +2207,39 @@
       </main>
     </section>
     <section class="tab-pane" data-tab="diagnostics">
-      <main style="grid-template-columns: 1fr;">
-        <section class="panel" id="diagnostics-panel">
-          <header>
-            <span id="diag-title">Diagnostics</span>
-            <span class="count" id="diag-count">-</span>
-          </header>
-          <nav class="subtabs" id="diag-subtabs">
-            <button class="subtab" data-subtab="runs" type="button">Recent Runs</button>
-            <button class="subtab" data-subtab="metrics" type="button">Metrics</button>
-            <button class="subtab" data-subtab="errors" type="button">Errors</button>
-          </nav>
-          <div class="body scoreboard-table-wrap" id="diag-body" style="display: none;">
-            <div class="skeleton-state">
-              <div class="skeleton skeleton-row"></div>
-              <div class="skeleton skeleton-row" style="width: 75%"></div>
+      <main class="tasks-layout" style="grid-template-columns: minmax(0, 2fr) minmax(280px, 1.15fr);">
+        <div style="display: flex; flex-direction: column; min-width: 0;">
+          <section class="panel" id="diagnostics-panel">
+            <header>
+              <span id="diag-title">Diagnostics</span>
+              <span class="count" id="diag-count">-</span>
+            </header>
+            <nav class="subtabs" id="diag-subtabs">
+              <button class="subtab" data-subtab="runs" type="button">Recent Runs</button>
+              <button class="subtab" data-subtab="metrics" type="button">Metrics</button>
+              <button class="subtab" data-subtab="errors" type="button">Errors</button>
+            </nav>
+            <div class="body scoreboard-table-wrap" id="diag-body" style="display: none;">
+              <div class="skeleton-state">
+                <div class="skeleton skeleton-row"></div>
+                <div class="skeleton skeleton-row" style="width: 75%"></div>
+              </div>
             </div>
-          </div>
-          <div class="body" id="runs-body" style="display: none;">
-            <div class="skeleton-state">
-              <div class="skeleton skeleton-row"></div>
-              <div class="skeleton skeleton-row" style="width: 80%"></div>
+            <div class="body" id="runs-body" style="display: none;">
+              <div class="skeleton-state">
+                <div class="skeleton skeleton-row"></div>
+                <div class="skeleton skeleton-row" style="width: 80%"></div>
+              </div>
             </div>
-          </div>
-        </section>
+          </section>
+        </div>
+        <div style="display: flex; flex-direction: column; min-width: 0;">
+          <section class="panel" id="diagnostics-side-panel">
+            <header><span>Diagnostics Summary</span></header>
+            <div class="body" id="diag-implement-one-body" style="padding: 16px; display: flex; flex-direction: column; gap: 16px; overflow-y: auto; background: var(--bg);">
+            </div>
+          </section>
+        </div>
       </main>
     </section>
     <section class="tab-pane" data-tab="knowledge">

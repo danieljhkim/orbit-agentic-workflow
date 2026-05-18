@@ -543,6 +543,71 @@ pub(super) async fn list_diagnostics_friction(
     }
 }
 
+pub(super) async fn diagnostics_implement_one(
+    State(runtime): State<Arc<OrbitRuntime>>,
+) -> Response {
+    let now = chrono::Utc::now();
+    let since = now - chrono::Duration::days(30);
+
+    let records = match runtime.invocation_records(orbit_core::InvocationQuery {
+        since: Some(since),
+        until: None,
+        activity_id: Some("implement_one".to_string()),
+        limit: 100_000,
+        ..Default::default()
+    }) {
+        Ok(r) => r,
+        Err(e) => return map_runtime_error(e),
+    };
+
+    let mut durations_by_actor: std::collections::HashMap<String, Vec<i64>> =
+        std::collections::HashMap::new();
+    for record in records {
+        let actor = actor_label(&record.agent, record.model.as_deref());
+        durations_by_actor
+            .entry(actor)
+            .or_default()
+            .push(record.duration_ms as i64);
+    }
+
+    let mut actor_vec: Vec<_> = durations_by_actor
+        .into_iter()
+        .map(|(actor, mut durations)| {
+            durations.sort_unstable();
+            let n = durations.len();
+            let avg = if n > 0 {
+                durations.iter().sum::<i64>() as f64 / n as f64
+            } else {
+                0.0
+            };
+            let p50_idx = ((n as f64 * 0.50).ceil() as usize).min(n).saturating_sub(1);
+            let p50 = if n > 0 { durations[p50_idx] } else { 0 };
+            let p95_idx = ((n as f64 * 0.95).ceil() as usize).min(n).saturating_sub(1);
+            let p95 = if n > 0 { durations[p95_idx] } else { 0 };
+            json!({
+                "actor": actor,
+                "n": n,
+                "avg": avg,
+                "p50": p50,
+                "p95": p95,
+            })
+        })
+        .collect();
+
+    actor_vec.sort_by(|a, b| {
+        b["avg"]
+            .as_f64()
+            .unwrap_or(0.0)
+            .partial_cmp(&a["avg"].as_f64().unwrap_or(0.0))
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+
+    Json(json!({
+        "implement_one_by_actor": actor_vec,
+    }))
+    .into_response()
+}
+
 #[cfg(test)]
 #[path = "diagnostics_tests.rs"]
 mod tests;

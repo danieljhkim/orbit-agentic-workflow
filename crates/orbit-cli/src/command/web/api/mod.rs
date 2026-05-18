@@ -352,6 +352,10 @@ pub(super) fn router() -> Router<Arc<OrbitRuntime>> {
             "/diagnostics/friction",
             get(diagnostics::list_diagnostics_friction),
         )
+        .route(
+            "/diagnostics/implement_one",
+            get(diagnostics::diagnostics_implement_one),
+        )
         .route("/diagnostics/denials", get(denials::list_denials))
         .layer(middleware::from_fn(require_localhost_origin))
 }

@@ -41,7 +41,7 @@ let activeStatuses = new Set(
 let lastTasks = [];
 let lastCrewPayload = { default_crew: null, crews: [] };
 let lastRuns = [];
-let lastDiagnostics = { metrics: [], errors: [] };
+let lastDiagnostics = { metrics: [], errors: [], implement_one: [] };
 let lastLearningPayload = { stats: {}, items: [] };
 let lastAdrPayload = { stats: {}, items: [] };
 let lastFrictionPayload = { stats: {}, tags: [], items: [] };
@@ -1176,7 +1176,7 @@ function fmtAbsTime(iso) {
 
 function fmtDuration(ms) {
   if (ms == null) return "-";
-  if (ms < 1000) return `${ms}ms`;
+  if (ms < 1000) return `${Math.round(ms)}ms`;
   if (ms < 60000) return `${(ms / 1000).toFixed(1)}s`;
   return `${Math.floor(ms / 60000)}m${Math.floor((ms % 60000) / 1000)}s`;
 }
@@ -2736,6 +2736,55 @@ function renderDiagnostics() {
     rows,
     columns,
   );
+
+  const sidePanel = $("diagnostics-side-panel");
+  if (sidePanel) {
+    renderImplementOneCard($("diag-implement-one-body"), lastDiagnostics.implement_one || []);
+  }
+}
+
+function renderMetricsCard(container, title, rows, cols) {
+  const card = el("div", { class: "audit-summary-card" });
+  card.appendChild(el("div", { class: "card-title", text: title }));
+  const body = el("div", { class: "card-body" });
+  
+  const table = el("table", { class: "summary-table" });
+  const thead = el("thead");
+  const tr = el("tr");
+  for (const c of cols) tr.appendChild(el("th", { class: c.num ? "num" : "", text: c.label }));
+  thead.appendChild(tr);
+  table.appendChild(thead);
+
+  const tbody = el("tbody");
+  for (const item of rows) {
+    const row = el("tr");
+    for (const c of cols) {
+      const val = c.format ? c.format(item[c.key]) : item[c.key];
+      row.appendChild(el("td", { class: c.num ? "num" : "", text: val }));
+    }
+    tbody.appendChild(row);
+  }
+  table.appendChild(tbody);
+  body.appendChild(table);
+  card.appendChild(body);
+  container.appendChild(card);
+}
+
+function renderImplementOneCard(container, rows) {
+  container.innerHTML = "";
+  if (rows.length === 0) {
+    container.appendChild(el("div", { class: "empty", text: "No implement_one runs in last 30d." }));
+    return;
+  }
+
+  const durCols = [
+    { key: "actor", label: "actor" },
+    { key: "n", label: "n", num: true },
+    { key: "avg", label: "avg", num: true, format: fmtDuration },
+    { key: "p50", label: "p50", num: true, format: fmtDuration },
+    { key: "p95", label: "p95", num: true, format: fmtDuration }
+  ];
+  renderMetricsCard(container, "Average implement_one duration by actor (30d)", rows, durCols);
 }
 
 function fetchAndCacheCrews() {
@@ -2804,29 +2853,36 @@ function activeRefreshJobs() {
     return jobs;
   }
 
-  if (activeDiagSubtab === "runs") {
-    jobs.push(fetchAndRenderRuns());
-    return jobs;
-  }
+  if (activeTab === "diagnostics") {
+    if (activeDiagSubtab === "runs") {
+      jobs.push(fetchAndRenderRuns());
+    } else if (activeDiagSubtab === "metrics") {
+      jobs.push(
+        fetchJson(`/api/diagnostics/metrics?limit=${DIAG_LIMIT}`).then((rows) => {
+          lastDiagnostics.metrics = rows;
+          renderDiagnostics();
+        })
+      );
+    } else if (activeDiagSubtab === "errors") {
+      jobs.push(
+        fetchJson(`/api/diagnostics/errors?limit=${DIAG_LIMIT}`).then((rows) => {
+          lastDiagnostics.errors = rows;
+          renderDiagnostics();
+        })
+      );
+    }
 
-  if (activeDiagSubtab === "metrics") {
     jobs.push(
-      fetchJson(`/api/diagnostics/metrics?limit=${DIAG_LIMIT}`).then((rows) => {
-        lastDiagnostics.metrics = rows;
-        renderDiagnostics();
-      }),
+      fetchJson(`/api/diagnostics/implement_one`)
+        .then((implOne) => {
+          lastDiagnostics.implement_one = implOne.implement_one_by_actor || [];
+          const sidePanel = $("diagnostics-side-panel");
+          if (sidePanel) {
+            renderImplementOneCard($("diag-implement-one-body"), lastDiagnostics.implement_one);
+          }
+        })
+        .catch(e => console.error("Failed to fetch implement_one metrics", e))
     );
-    return jobs;
-  }
-
-  if (activeDiagSubtab === "errors") {
-    jobs.push(
-      fetchJson(`/api/diagnostics/errors?limit=${DIAG_LIMIT}`).then((rows) => {
-        lastDiagnostics.errors = rows;
-        renderDiagnostics();
-      }),
-    );
-    return jobs;
   }
   return jobs;
 }
@@ -2903,7 +2959,141 @@ function fetchAndRenderSummary() {
   return fetchJson(`/api/audit/summary?since=24h`).then((data) => {
     lastSummary = data;
     renderHealthStrip(data);
+    renderAuditSummary(data);
   });
+}
+
+function renderAuditSummary(data) {
+  const container = $("audit-summary-body");
+  if (!container) return;
+  container.innerHTML = "";
+
+  const createCard = (title, renderBody) => {
+    const card = el("div", { class: "audit-summary-card" });
+    card.appendChild(el("div", { class: "card-title", text: title }));
+    const body = el("div", { class: "card-body" });
+    renderBody(body);
+    card.appendChild(body);
+    return card;
+  };
+
+  const renderTable = (items, cols, onRowClick) => {
+    return (body) => {
+      if (!items || items.length === 0) {
+        body.appendChild(el("div", { class: "empty", text: "No data" }));
+        return;
+      }
+      const table = el("table", { class: "summary-table" });
+      const thead = el("thead");
+      const tr = el("tr");
+      for (const c of cols) tr.appendChild(el("th", { class: c.num ? "num" : "", text: c.label }));
+      thead.appendChild(tr);
+      table.appendChild(thead);
+
+      const tbody = el("tbody");
+      for (const item of items) {
+        const row = el("tr");
+        if (onRowClick) {
+          row.classList.add("clickable");
+          row.addEventListener("click", () => onRowClick(item));
+        }
+        for (const c of cols) {
+          const val = c.format ? c.format(item[c.key]) : item[c.key];
+          row.appendChild(el("td", { class: c.num ? "num" : "", text: val }));
+        }
+        tbody.appendChild(row);
+      }
+      table.appendChild(tbody);
+      body.appendChild(table);
+    };
+  };
+
+  const filterByTool = (item) => {
+    auditFilter.tool = auditFilter.tool === item.tool ? null : item.tool;
+    syncAuditControls();
+    window.location.hash = buildAuditHash();
+  };
+
+  if (data.failures_by_tool) {
+    container.appendChild(createCard("Failures by tool", renderTable(
+      data.failures_by_tool,
+      [{ key: "tool", label: "tool" }, { key: "count", label: "fails", num: true }, { key: "mcp", label: "mcp", num: true }, { key: "cli", label: "cli", num: true }],
+      filterByTool
+    )));
+  }
+
+  if (data.duration_by_tool) {
+    container.appendChild(createCard("Top duration (avg)", renderTable(
+      data.duration_by_tool,
+      [
+        { key: "tool", label: "tool" },
+        { key: "count", label: "count", num: true },
+        { key: "avg", label: "avg", num: true, format: (v) => fmtDuration(v) },
+        { key: "p95", label: "p95", num: true, format: (v) => fmtDuration(v) }
+      ],
+      filterByTool
+    )));
+  }
+
+  if (data.failure_rate_by_tool) {
+    container.appendChild(createCard("Failure rate %", renderTable(
+      data.failure_rate_by_tool,
+      [
+        { key: "tool", label: "tool" },
+        { key: "rate", label: "rate", num: true, format: (r) => (r * 100).toFixed(1) + "%" },
+        { key: "mcp_rate", label: "mcp", num: true, format: (r) => (r * 100).toFixed(1) + "%" },
+        { key: "cli_rate", label: "cli", num: true, format: (r) => (r * 100).toFixed(1) + "%" }
+      ],
+      filterByTool
+    )));
+  }
+
+  if (data.denials_by_tool || data.denials_by_reason) {
+    const card = el("div", { class: "audit-summary-card" });
+    card.appendChild(el("div", { class: "card-title", text: "Denials" }));
+    const body = el("div", { class: "card-body" });
+    const sectionLabel = (txt) => {
+      const lbl = el("div", { class: "card-subtitle", text: txt });
+      lbl.style.cssText = "padding: 6px 12px; font-size: 10px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--fg-dim); border-bottom: 1px solid var(--border); background: rgba(255,255,255,0.02);";
+      return lbl;
+    };
+    const toolRows = data.denials_by_tool || [];
+    body.appendChild(sectionLabel("By tool"));
+    renderTable(
+      toolRows,
+      [{ key: "tool", label: "tool" }, { key: "count", label: "count", num: true }],
+      filterByTool
+    )(body);
+    const reasonRows = data.denials_by_reason || [];
+    body.appendChild(sectionLabel("By reason"));
+    renderTable(
+      reasonRows,
+      [{ key: "reason", label: "reason" }, { key: "count", label: "count", num: true }],
+      null
+    )(body);
+    card.appendChild(body);
+    container.appendChild(card);
+  }
+
+  if (data.role_split) {
+    container.appendChild(createCard("Role split", renderTable(
+      data.role_split,
+      [{ key: "label", label: "role" }, { key: "count", label: "count", num: true }, { key: "mcp", label: "mcp", num: true }, { key: "cli", label: "cli", num: true }],
+      (item) => {
+        auditFilter.role = auditFilter.role === item.label ? null : item.label;
+        syncAuditControls();
+        window.location.hash = buildAuditHash();
+      }
+    )));
+  }
+
+  if (data.mcp_vs_cli_split) {
+    container.appendChild(createCard("MCP vs CLI", renderTable(
+      data.mcp_vs_cli_split,
+      [{ key: "label", label: "surface" }, { key: "count", label: "count", num: true }],
+      null
+    )));
+  }
 }
 
 function fetchAndRenderPolicy() {
@@ -3354,7 +3544,6 @@ const AUDIT_COLUMNS = [
   { key: "status", label: "status" },
   { key: "exit", label: "exit", num: true },
   { key: "duration", label: "duration", num: true },
-  { key: "execution_id", label: "execution id" },
 ];
 
 function renderAudit(events) {
@@ -3408,7 +3597,6 @@ function renderAudit(events) {
     tr.appendChild(statusTd);
     tr.appendChild(el("td", { class: exitClass, text: exit == null ? "-" : String(exit) }));
     tr.appendChild(el("td", { class: "num", text: fmtDuration(ev.duration_ms) }));
-    tr.appendChild(el("td", { text: ev.execution_id || "-", title: ev.execution_id || "" }));
     if (expandedAuditIds.has(ev.id)) tr.classList.add("expanded");
     tr.addEventListener("click", () => {
       if (expandedAuditIds.has(ev.id)) expandedAuditIds.delete(ev.id);

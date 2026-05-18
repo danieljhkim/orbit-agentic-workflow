@@ -11,7 +11,9 @@ use orbit_core::command::job::JobRunListParams;
 use orbit_core::{AuditEventStatus, JobRunState, OrbitRuntime};
 use serde_json::{Value, json};
 
-use super::denials::scan_v2_loop_denials;
+use super::denials::{
+    collect_denial_rows, denials_by_reason_summary, denials_by_tool_summary, scan_v2_loop_denials,
+};
 use super::{
     AuditQuery, AuditSummaryQuery, DEFAULT_SUMMARY_WINDOW, HISTORY_DEFAULT_LIMIT,
     HISTORY_MAX_LIMIT, bad_request, bounded_limit, map_runtime_error, server_error,
@@ -189,6 +191,147 @@ pub(super) async fn audit_summary(
     };
     let sparkline = build_sparkline(since, &buckets);
 
+    let events = match runtime.list_audit_events(Some(since), None, None, None, 100_000) {
+        Ok(evs) => evs,
+        Err(e) => return server_error(e),
+    };
+
+    let mut failures_by_tool: std::collections::HashMap<String, u64> =
+        std::collections::HashMap::new();
+    let mut duration_by_tool: std::collections::HashMap<String, Vec<i64>> =
+        std::collections::HashMap::new();
+    let mut totals_by_tool: std::collections::HashMap<String, u64> =
+        std::collections::HashMap::new();
+    let mut role_split: std::collections::HashMap<String, u64> = std::collections::HashMap::new();
+
+    let mut role_mcp: std::collections::HashMap<String, u64> = std::collections::HashMap::new();
+    let mut role_cli: std::collections::HashMap<String, u64> = std::collections::HashMap::new();
+    let mut tool_mcp_fails: std::collections::HashMap<String, u64> =
+        std::collections::HashMap::new();
+    let mut tool_cli_fails: std::collections::HashMap<String, u64> =
+        std::collections::HashMap::new();
+    let mut tool_mcp_total: std::collections::HashMap<String, u64> =
+        std::collections::HashMap::new();
+    let mut tool_cli_total: std::collections::HashMap<String, u64> =
+        std::collections::HashMap::new();
+    let mut mcp_count: u64 = 0;
+    let mut cli_count: u64 = 0;
+
+    for e in &events {
+        let role = e.role.clone();
+        *role_split.entry(role.clone()).or_default() += 1;
+
+        let is_mcp = e.subcommand.as_deref() == Some("run-mcp");
+        let is_cli = e.subcommand.as_deref() == Some("run");
+
+        if is_mcp {
+            mcp_count += 1;
+            *role_mcp.entry(role.clone()).or_default() += 1;
+        } else if is_cli {
+            cli_count += 1;
+            *role_cli.entry(role.clone()).or_default() += 1;
+        }
+
+        let tool = e.tool_name.clone().unwrap_or_else(|| "unknown".to_string());
+        *totals_by_tool.entry(tool.clone()).or_default() += 1;
+        if is_mcp {
+            *tool_mcp_total.entry(tool.clone()).or_default() += 1;
+        } else if is_cli {
+            *tool_cli_total.entry(tool.clone()).or_default() += 1;
+        }
+
+        if e.status == orbit_core::AuditEventStatus::Failure {
+            *failures_by_tool.entry(tool.clone()).or_default() += 1;
+            if is_mcp {
+                *tool_mcp_fails.entry(tool.clone()).or_default() += 1;
+            } else if is_cli {
+                *tool_cli_fails.entry(tool.clone()).or_default() += 1;
+            }
+        }
+
+        duration_by_tool
+            .entry(tool)
+            .or_default()
+            .push(e.duration_ms as i64);
+    }
+
+    let mut failures_vec: Vec<_> = failures_by_tool
+        .iter()
+        .map(|(tool, count)| {
+            let mcp = tool_mcp_fails.get(tool).copied().unwrap_or(0);
+            let cli = tool_cli_fails.get(tool).copied().unwrap_or(0);
+            json!({"tool": tool, "count": count, "mcp": mcp, "cli": cli})
+        })
+        .collect();
+    failures_vec.sort_by_key(|v| std::cmp::Reverse(v["count"].as_u64().unwrap_or(0)));
+    failures_vec.truncate(8);
+
+    let mut duration_vec: Vec<_> = duration_by_tool
+        .into_iter()
+        .map(|(tool, mut durations)| {
+            durations.sort_unstable();
+            let n = durations.len();
+            let avg = if n > 0 {
+                durations.iter().sum::<i64>() as f64 / n as f64
+            } else {
+                0.0
+            };
+            let p95_idx = ((n as f64 * 0.95).ceil() as usize).min(n).saturating_sub(1);
+            let p95 = if n > 0 { durations[p95_idx] } else { 0 };
+            json!({"tool": tool, "count": n, "avg": avg, "p95": p95})
+        })
+        .collect();
+    duration_vec.sort_by(|a, b| {
+        b["avg"]
+            .as_f64()
+            .unwrap_or(0.0)
+            .partial_cmp(&a["avg"].as_f64().unwrap_or(0.0))
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+    duration_vec.truncate(8);
+
+    let mut rate_vec: Vec<_> = totals_by_tool.iter().filter(|(_, total)| **total >= 5).map(|(tool, total)| {
+        let fails = failures_by_tool.get(tool).copied().unwrap_or(0);
+        let mcp_fails = tool_mcp_fails.get(tool).copied().unwrap_or(0);
+        let cli_fails = tool_cli_fails.get(tool).copied().unwrap_or(0);
+        let mcp_total = tool_mcp_total.get(tool).copied().unwrap_or(0);
+        let cli_total = tool_cli_total.get(tool).copied().unwrap_or(0);
+        let rate = fails as f64 / *total as f64;
+        let mcp_rate = if mcp_total > 0 { mcp_fails as f64 / mcp_total as f64 } else { 0.0 };
+        let cli_rate = if cli_total > 0 { cli_fails as f64 / cli_total as f64 } else { 0.0 };
+        json!({"tool": tool, "rate": rate, "failures": fails, "mcp_rate": mcp_rate, "cli_rate": cli_rate, "total": total})
+    }).collect();
+    rate_vec.sort_by(|a, b| {
+        b["rate"]
+            .as_f64()
+            .unwrap_or(0.0)
+            .partial_cmp(&a["rate"].as_f64().unwrap_or(0.0))
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+    rate_vec.truncate(8);
+
+    let mut role_vec: Vec<_> = role_split
+        .into_iter()
+        .map(|(role, count)| {
+            let mcp = role_mcp.get(&role).copied().unwrap_or(0);
+            let cli = role_cli.get(&role).copied().unwrap_or(0);
+            json!({"label": role, "count": count, "mcp": mcp, "cli": cli})
+        })
+        .collect();
+    role_vec.sort_by_key(|v| std::cmp::Reverse(v["count"].as_u64().unwrap_or(0)));
+
+    let mcp_vs_cli_split = json!([
+        {"label": "mcp", "count": mcp_count},
+        {"label": "cli", "count": cli_count},
+    ]);
+
+    let denial_rows = match collect_denial_rows(&runtime, Some(since), None, None) {
+        Ok(rows) => rows,
+        Err(e) => return server_error(e),
+    };
+    let denials_by_tool = denials_by_tool_summary(&denial_rows, 8);
+    let denials_by_reason = denials_by_reason_summary(&denial_rows, 8);
+
     let denials = sql_denied + v2_denials;
 
     Json(json!({
@@ -202,6 +345,13 @@ pub(super) async fn audit_summary(
         "denial_threshold": denial_threshold,
         "since": since.to_rfc3339(),
         "window": raw_since,
+        "failures_by_tool": failures_vec,
+        "duration_by_tool": duration_vec,
+        "failure_rate_by_tool": rate_vec,
+        "role_split": role_vec,
+        "mcp_vs_cli_split": mcp_vs_cli_split,
+        "denials_by_tool": denials_by_tool,
+        "denials_by_reason": denials_by_reason,
     }))
     .into_response()
 }
