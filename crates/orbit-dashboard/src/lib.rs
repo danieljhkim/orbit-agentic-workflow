@@ -28,6 +28,7 @@ const INDEX_HTML: &str = include_str!("../assets/dashboard/index.html");
 const APP_JS: &str = include_str!("../assets/dashboard/app.js");
 const COMMON_JS: &str = include_str!("../assets/dashboard/common.js");
 const TASKS_JS: &str = include_str!("../assets/dashboard/tasks.js");
+const AUDIT_JS: &str = include_str!("../assets/dashboard/audit.js");
 
 /// Arguments for `orbit web serve` (and the library entry point).
 #[derive(Args, Clone)]
@@ -62,6 +63,7 @@ pub fn serve(runtime: &OrbitRuntime, args: ServeArgs) -> Result<(), OrbitError> 
         .route("/static/app.js", get(serve_app_js))
         .route("/static/common.js", get(serve_common_js))
         .route("/static/tasks.js", get(serve_tasks_js))
+        .route("/static/audit.js", get(serve_audit_js))
         .route("/healthz", get(healthz))
         .nest("/api", api::router())
         .with_state(runtime);
@@ -134,6 +136,17 @@ async fn serve_tasks_js() -> Response {
             HeaderValue::from_static("application/javascript; charset=utf-8"),
         )],
         TASKS_JS,
+    )
+        .into_response()
+}
+
+async fn serve_audit_js() -> Response {
+    (
+        [(
+            header::CONTENT_TYPE,
+            HeaderValue::from_static("application/javascript; charset=utf-8"),
+        )],
+        AUDIT_JS,
     )
         .into_response()
 }
