@@ -48,7 +48,7 @@ Doc = explanatory context. It is PR-reviewed Markdown, retrieved through `orbit.
 
 - ADRs are owned by `orbit-adr` and live at `.orbit/adrs/{accepted,proposed,superseded}/ADR-NNNN/`. Orbit-docs does not index `.orbit/` in v1.
 - Learnings are owned by `orbit-learning`; cross-reference them from docs with `related_artifacts`.
-- Use `orbit-design` only when the user specifically wants the current design-doc convention tooling. Orbit-design retirement is separate from orbit-docs.
+- `orbit-design` is retired. Use `orbit-docs` for docs retrieval and `orbit-adr` when creating, accepting, or superseding ADRs.
 
 ## Tool Invocation
 

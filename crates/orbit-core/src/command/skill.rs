@@ -9,7 +9,7 @@ use orbit_common::utility::fs::write_text_with_parent;
 use crate::OrbitRuntime;
 use crate::skill_catalog::{LoadedSkill, SkillCatalogDoctorStatus};
 
-const DEFAULT_SKILL_FILES: [(&str, &str); 13] = [
+const DEFAULT_SKILL_FILES: [(&str, &str); 12] = [
     ("orbit", include_str!("../../assets/skills/orbit/SKILL.md")),
     (
         "orbit-adr",
@@ -22,10 +22,6 @@ const DEFAULT_SKILL_FILES: [(&str, &str); 13] = [
     (
         "orbit-debug-job-failure",
         include_str!("../../assets/skills/orbit-debug-job-failure/SKILL.md"),
-    ),
-    (
-        "orbit-design",
-        include_str!("../../assets/skills/orbit-design/SKILL.md"),
     ),
     (
         "orbit-execute-task",
@@ -87,7 +83,7 @@ pub struct SkillDoctorResult {
     pub message: String,
 }
 
-pub(crate) fn default_skill_ids() -> [&'static str; 13] {
+pub(crate) fn default_skill_ids() -> [&'static str; 12] {
     DEFAULT_SKILL_FILES.map(|(id, _)| id)
 }
 
@@ -281,6 +277,8 @@ mod drift_tests {
             }
         }
 
+        // L20260519-4: retired skills can leave dangling symlinks behind, so
+        // keep this reverse check strict about orphan plugin entries.
         // Reverse: no orphan symlinks in plugin/skills/ (catches stale entries
         // for retired skills and accidental inclusion of an excluded skill).
         let on_disk: BTreeSet<String> = std::fs::read_dir(&plugin_skills)
