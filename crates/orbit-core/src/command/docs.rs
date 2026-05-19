@@ -1,7 +1,9 @@
+use std::collections::HashSet;
 use std::fmt;
 use std::fs;
+use std::io::Write;
 use std::path::{Component, Path, PathBuf};
-use std::process::Command;
+use std::process::{Command, Stdio};
 use std::str::FromStr;
 
 use orbit_common::types::OrbitError;
@@ -12,6 +14,17 @@ use crate::OrbitRuntime;
 
 const DEFAULT_DOC_ROOT: &str = "docs/";
 const DOC_TYPES: &[&str] = &["design", "pattern", "context", "glossary", "runbook"];
+
+#[cfg(test)]
+thread_local! {
+    static GIT_CHECK_IGNORE_INVOCATIONS: std::cell::Cell<usize> =
+        const { std::cell::Cell::new(0) };
+}
+
+#[cfg(test)]
+fn record_git_check_ignore_invocation() {
+    GIT_CHECK_IGNORE_INVOCATIONS.with(|calls| calls.set(calls.get() + 1));
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum DocType {
@@ -489,18 +502,36 @@ fn titleize_slug(raw: &str) -> String {
 }
 
 pub fn walk_docs_roots(repo_root: &Path, roots: &[String]) -> Result<Vec<DocRecord>, OrbitError> {
-    let mut records = Vec::new();
+    let mut candidates = Vec::new();
     for root in roots {
         for path in expand_root(repo_root, root)? {
             if path_is_or_contains_dot_orbit(repo_root, &path) {
                 continue;
             }
             if path.is_file() {
-                maybe_push_doc(repo_root, &path, &mut records)?;
+                maybe_push_doc_candidate(repo_root, &path, &mut candidates)?;
             } else if path.is_dir() {
-                walk_dir(repo_root, &path, &mut records)?;
+                walk_dir(repo_root, &path, &mut candidates)?;
             }
         }
+    }
+    candidates.sort();
+    candidates.dedup();
+
+    let ignored = git_ignored_paths(repo_root, &candidates);
+    let mut records = Vec::new();
+    for relative in candidates {
+        if ignored.contains(&relative) {
+            continue;
+        }
+        let path = repo_root.join(&relative);
+        let raw = fs::read_to_string(&path)
+            .map_err(|error| OrbitError::Io(format!("read {}: {error}", path.display())))?;
+        let parsed = parse_doc_tolerant(&relative, &path, &raw);
+        records.push(DocRecord {
+            path: path_to_slash_string(&relative),
+            frontmatter: parsed.frontmatter,
+        });
     }
     records.sort_by(|left, right| left.path.cmp(&right.path));
     records.dedup_by(|left, right| left.path == right.path);
@@ -572,7 +603,7 @@ fn expand_wildcard_segments(
     rec(base, &parts, out)
 }
 
-fn walk_dir(repo_root: &Path, dir: &Path, records: &mut Vec<DocRecord>) -> Result<(), OrbitError> {
+fn walk_dir(repo_root: &Path, dir: &Path, candidates: &mut Vec<PathBuf>) -> Result<(), OrbitError> {
     if should_skip_dir(repo_root, dir) {
         return Ok(());
     }
@@ -587,18 +618,18 @@ fn walk_dir(repo_root: &Path, dir: &Path, records: &mut Vec<DocRecord>) -> Resul
             .file_type()
             .map_err(|error| OrbitError::Io(error.to_string()))?;
         if file_type.is_dir() {
-            walk_dir(repo_root, &path, records)?;
+            walk_dir(repo_root, &path, candidates)?;
         } else if file_type.is_file() {
-            maybe_push_doc(repo_root, &path, records)?;
+            maybe_push_doc_candidate(repo_root, &path, candidates)?;
         }
     }
     Ok(())
 }
 
-fn maybe_push_doc(
+fn maybe_push_doc_candidate(
     repo_root: &Path,
     path: &Path,
-    records: &mut Vec<DocRecord>,
+    candidates: &mut Vec<PathBuf>,
 ) -> Result<(), OrbitError> {
     if path.extension().and_then(|value| value.to_str()) != Some("md") {
         return Ok(());
@@ -607,16 +638,7 @@ fn maybe_push_doc(
         return Ok(());
     }
     let relative = repo_relative_path(repo_root, path)?;
-    if is_git_ignored(repo_root, &relative) {
-        return Ok(());
-    }
-    let raw = fs::read_to_string(path)
-        .map_err(|error| OrbitError::Io(format!("read {}: {error}", path.display())))?;
-    let parsed = parse_doc_tolerant(&relative, path, &raw);
-    records.push(DocRecord {
-        path: path_to_slash_string(&relative),
-        frontmatter: parsed.frontmatter,
-    });
+    candidates.push(relative);
     Ok(())
 }
 
@@ -637,18 +659,55 @@ fn path_is_or_contains_dot_orbit(repo_root: &Path, path: &Path) -> bool {
         .any(|component| matches!(component, Component::Normal(value) if value == ".orbit"))
 }
 
-fn is_git_ignored(repo_root: &Path, relative: &Path) -> bool {
-    let status = Command::new("git")
+fn git_ignored_paths(repo_root: &Path, relatives: &[PathBuf]) -> HashSet<PathBuf> {
+    let mut ignored = HashSet::new();
+    if relatives.is_empty() {
+        return ignored;
+    }
+    #[cfg(test)]
+    record_git_check_ignore_invocation();
+    let mut child = match Command::new("git")
         .arg("-C")
         .arg(repo_root)
         .arg("check-ignore")
-        .arg("-q")
-        .arg("--")
-        .arg(relative)
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .status();
-    matches!(status, Ok(status) if status.success())
+        .arg("-z")
+        .arg("--stdin")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+    {
+        Ok(child) => child,
+        Err(_) => return ignored,
+    };
+    let mut wrote_all = true;
+    if let Some(mut stdin) = child.stdin.take() {
+        for relative in relatives {
+            let path = path_to_slash_string(relative);
+            if stdin.write_all(path.as_bytes()).is_err() || stdin.write_all(b"\0").is_err() {
+                wrote_all = false;
+                break;
+            }
+        }
+    }
+    if !wrote_all {
+        let _ = child.wait();
+        return ignored;
+    }
+    let output = match child.wait_with_output() {
+        Ok(output) => output,
+        Err(_) => return ignored,
+    };
+    if !output.status.success() {
+        return ignored;
+    }
+    for raw_path in output.stdout.split(|byte| *byte == 0) {
+        if raw_path.is_empty() {
+            continue;
+        }
+        ignored.insert(PathBuf::from(String::from_utf8_lossy(raw_path).to_string()));
+    }
+    ignored
 }
 
 fn show_doc(repo_root: &Path, roots: &[String], requested: &str) -> Result<DocShow, OrbitError> {
@@ -965,7 +1024,7 @@ fn migrate_doc_content(
     let body = block.as_ref().map(|block| block.body).unwrap_or(raw);
     let inferred = infer_frontmatter(relative, body);
     let updated = match block {
-        Some(block) => update_existing_frontmatter(block.raw, body, &inferred),
+        Some(block) => update_existing_frontmatter(block.raw, body, &inferred)?,
         None => {
             let mut output = render_frontmatter_block(&inferred);
             output.push_str(raw);
@@ -978,43 +1037,64 @@ fn migrate_doc_content(
     Ok(Some(updated))
 }
 
-fn update_existing_frontmatter(existing: &str, body: &str, inferred: &DocFrontmatter) -> String {
-    let mut lines = existing.lines().map(ToOwned::to_owned).collect::<Vec<_>>();
-    upsert_yaml_scalar(&mut lines, "type", inferred.doc_type.as_str());
-    upsert_yaml_scalar(
-        &mut lines,
-        "summary",
-        &yaml_inline_string(&inferred.summary),
+fn update_existing_frontmatter(
+    existing: &str,
+    body: &str,
+    inferred: &DocFrontmatter,
+) -> Result<String, OrbitError> {
+    let mut value = if existing.trim().is_empty() {
+        serde_yaml::Value::Mapping(serde_yaml::Mapping::new())
+    } else {
+        serde_yaml::from_str::<serde_yaml::Value>(existing).map_err(|error| {
+            OrbitError::InvalidInput(format!("invalid frontmatter YAML while migrating: {error}"))
+        })?
+    };
+    if matches!(value, serde_yaml::Value::Null) {
+        value = serde_yaml::Value::Mapping(serde_yaml::Mapping::new());
+    }
+    let serde_yaml::Value::Mapping(mapping) = &mut value else {
+        return Err(OrbitError::InvalidInput(
+            "frontmatter YAML must be a mapping to migrate".to_string(),
+        ));
+    };
+    mapping.insert(
+        serde_yaml::Value::String("type".to_string()),
+        serde_yaml::Value::String(inferred.doc_type.as_str().to_string()),
     );
-    if !inferred.tags.is_empty() && !has_yaml_key(&lines, "tags") {
-        lines.push(format!("tags: {}", json!(inferred.tags)));
+    mapping.insert(
+        serde_yaml::Value::String("summary".to_string()),
+        serde_yaml::Value::String(inferred.summary.clone()),
+    );
+    let tags_key = serde_yaml::Value::String("tags".to_string());
+    if !inferred.tags.is_empty() && !mapping.contains_key(&tags_key) {
+        mapping.insert(
+            tags_key,
+            serde_yaml::Value::Sequence(
+                inferred
+                    .tags
+                    .iter()
+                    .cloned()
+                    .map(serde_yaml::Value::String)
+                    .collect(),
+            ),
+        );
+    }
+    let mut rendered = serde_yaml::to_string(&value)
+        .map_err(|error| OrbitError::Execution(format!("serialize frontmatter YAML: {error}")))?;
+    if let Some(stripped) = rendered.strip_prefix("---\n") {
+        rendered = stripped.to_string();
+    }
+    if let Some(stripped) = rendered.strip_suffix("...\n") {
+        rendered = stripped.to_string();
     }
     let mut output = String::from("---\n");
-    output.push_str(&lines.join("\n"));
+    output.push_str(&rendered);
     if !output.ends_with('\n') {
         output.push('\n');
     }
     output.push_str("---\n");
     output.push_str(body);
-    output
-}
-
-fn upsert_yaml_scalar(lines: &mut Vec<String>, key: &str, value: &str) {
-    let prefix = format!("{key}:");
-    for line in lines.iter_mut() {
-        if line.trim_start().starts_with(&prefix) {
-            *line = format!("{key}: {value}");
-            return;
-        }
-    }
-    lines.insert(0, format!("{key}: {value}"));
-}
-
-fn has_yaml_key(lines: &[String], key: &str) -> bool {
-    let prefix = format!("{key}:");
-    lines
-        .iter()
-        .any(|line| line.trim_start().starts_with(&prefix))
+    Ok(output)
 }
 
 fn render_frontmatter_block(frontmatter: &DocFrontmatter) -> String {
@@ -1051,9 +1131,102 @@ fn yaml_inline_string(value: &str) -> String {
 }
 
 fn migration_diff(path: &str, before: &str, after: &str) -> String {
-    let before_head = before.lines().take(12).collect::<Vec<_>>().join("\n");
-    let after_head = after.lines().take(16).collect::<Vec<_>>().join("\n");
-    format!("--- {path}\n+++ {path}\n@@\n-{before_head}\n+{after_head}\n")
+    let before_lines = diff_lines(before);
+    let after_lines = diff_lines(after);
+    let old_start = if before_lines.is_empty() { 0 } else { 1 };
+    let new_start = if after_lines.is_empty() { 0 } else { 1 };
+    let mut output = format!(
+        "--- {path}\n+++ {path}\n@@ -{old_start},{} +{new_start},{} @@\n",
+        before_lines.len(),
+        after_lines.len()
+    );
+    for op in line_diff(&before_lines, &after_lines) {
+        match op {
+            DiffOp::Equal(line) => push_diff_line(&mut output, ' ', line),
+            DiffOp::Delete(line) => push_diff_line(&mut output, '-', line),
+            DiffOp::Insert(line) => push_diff_line(&mut output, '+', line),
+        }
+    }
+    output
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+struct DiffLine<'a> {
+    text: &'a str,
+    has_newline: bool,
+}
+
+enum DiffOp<'a> {
+    Equal(DiffLine<'a>),
+    Delete(DiffLine<'a>),
+    Insert(DiffLine<'a>),
+}
+
+fn diff_lines(raw: &str) -> Vec<DiffLine<'_>> {
+    if raw.is_empty() {
+        return Vec::new();
+    }
+    raw.split_inclusive('\n')
+        .map(|line| match line.strip_suffix('\n') {
+            Some(without_newline) => DiffLine {
+                text: without_newline
+                    .strip_suffix('\r')
+                    .unwrap_or(without_newline),
+                has_newline: true,
+            },
+            None => DiffLine {
+                text: line,
+                has_newline: false,
+            },
+        })
+        .collect()
+}
+
+fn line_diff<'a>(before: &[DiffLine<'a>], after: &[DiffLine<'a>]) -> Vec<DiffOp<'a>> {
+    let mut lcs = vec![vec![0usize; after.len() + 1]; before.len() + 1];
+    for before_index in (0..before.len()).rev() {
+        for after_index in (0..after.len()).rev() {
+            lcs[before_index][after_index] = if before[before_index] == after[after_index] {
+                lcs[before_index + 1][after_index + 1] + 1
+            } else {
+                lcs[before_index + 1][after_index].max(lcs[before_index][after_index + 1])
+            };
+        }
+    }
+    let mut ops = Vec::new();
+    let mut before_index = 0;
+    let mut after_index = 0;
+    while before_index < before.len() && after_index < after.len() {
+        if before[before_index] == after[after_index] {
+            ops.push(DiffOp::Equal(before[before_index]));
+            before_index += 1;
+            after_index += 1;
+        } else if lcs[before_index + 1][after_index] >= lcs[before_index][after_index + 1] {
+            ops.push(DiffOp::Delete(before[before_index]));
+            before_index += 1;
+        } else {
+            ops.push(DiffOp::Insert(after[after_index]));
+            after_index += 1;
+        }
+    }
+    while before_index < before.len() {
+        ops.push(DiffOp::Delete(before[before_index]));
+        before_index += 1;
+    }
+    while after_index < after.len() {
+        ops.push(DiffOp::Insert(after[after_index]));
+        after_index += 1;
+    }
+    ops
+}
+
+fn push_diff_line(output: &mut String, prefix: char, line: DiffLine<'_>) {
+    output.push(prefix);
+    output.push_str(line.text);
+    output.push('\n');
+    if !line.has_newline {
+        output.push_str("\\ No newline at end of file\n");
+    }
 }
 
 fn parse_artifact_ref(raw: &str) -> Result<ArtifactRef, String> {
@@ -1155,6 +1328,42 @@ mod tests {
         parse_doc_frontmatter_strict(Path::new("docs/example.md"), raw)
     }
 
+    fn reset_git_check_ignore_invocations() {
+        GIT_CHECK_IGNORE_INVOCATIONS.with(|calls| calls.set(0));
+    }
+
+    fn git_check_ignore_invocations() -> usize {
+        GIT_CHECK_IGNORE_INVOCATIONS.with(std::cell::Cell::get)
+    }
+
+    fn yaml_string<'a>(mapping: &'a serde_yaml::Mapping, key: &str) -> Option<&'a str> {
+        mapping
+            .get(serde_yaml::Value::String(key.to_string()))
+            .and_then(serde_yaml::Value::as_str)
+    }
+
+    fn apply_patch(root: &Path, diff: &str, dry_run: bool) {
+        let mut command = Command::new("patch");
+        command.arg("-p0").current_dir(root).stdin(Stdio::piped());
+        if dry_run {
+            command.arg("--dry-run");
+        }
+        let mut child = command.spawn().expect("spawn patch");
+        child
+            .stdin
+            .as_mut()
+            .expect("patch stdin")
+            .write_all(diff.as_bytes())
+            .expect("write patch");
+        let output = child.wait_with_output().expect("patch output");
+        assert!(
+            output.status.success(),
+            "patch failed\nstdout:\n{}\nstderr:\n{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+
     #[test]
     fn strict_frontmatter_accepts_locked_schema() {
         let parsed = parse_frontmatter(
@@ -1252,6 +1461,29 @@ mod tests {
     }
 
     #[test]
+    fn walker_batches_git_ignore_once_per_walk() {
+        let dir = tempdir().expect("tempdir");
+        let root = dir.path();
+        fs::create_dir_all(root.join("docs/nested")).expect("docs dir");
+        fs::write(
+            root.join("docs/one.md"),
+            "---\ntype: context\nsummary: One doc\n---\nbody\n",
+        )
+        .expect("write one");
+        fs::write(
+            root.join("docs/nested/two.md"),
+            "---\ntype: context\nsummary: Two doc\n---\nbody\n",
+        )
+        .expect("write two");
+
+        reset_git_check_ignore_invocations();
+        let records = walk_docs_roots(root, &["docs/".to_string()]).expect("walk docs");
+
+        assert_eq!(git_check_ignore_invocations(), 1);
+        assert_eq!(records.len(), 2);
+    }
+
+    #[test]
     fn config_roots_default_and_parse_explicit_values() {
         assert_eq!(
             parse_docs_roots_from_config_toml("").unwrap(),
@@ -1287,5 +1519,71 @@ mod tests {
             .unwrap()
             .is_none()
         );
+    }
+
+    #[test]
+    fn migration_diff_applies_to_original_content() {
+        let dir = tempdir().expect("tempdir");
+        let root = dir.path();
+        let relative = Path::new("docs/design/sample/1_overview.md");
+        let path = root.join(relative);
+        fs::create_dir_all(path.parent().expect("parent")).expect("create docs");
+        let raw = "---\ntitle: Example\nowner: codex\n---\n\n# Example\n";
+        fs::write(&path, raw).expect("write original");
+
+        let updated = migrate_doc_content(relative, &path, raw)
+            .expect("migrate")
+            .expect("changed");
+        let diff = migration_diff("docs/design/sample/1_overview.md", raw, &updated);
+
+        apply_patch(root, &diff, true);
+        apply_patch(root, &diff, false);
+        assert_eq!(fs::read_to_string(&path).expect("read patched"), updated);
+    }
+
+    #[test]
+    fn migrate_preserves_multiline_frontmatter_values() {
+        let raw = "---\ntitle: Example\ndescription: |\n  First line\n  Second: line\nowner: codex\n---\n\n# Example\n";
+        let updated = migrate_doc_content(
+            Path::new("docs/design/sample/1_overview.md"),
+            Path::new("docs/design/sample/1_overview.md"),
+            raw,
+        )
+        .expect("migrate")
+        .expect("changed");
+        let block = split_frontmatter(&updated)
+            .expect("split")
+            .expect("frontmatter");
+        let yaml = serde_yaml::from_str::<serde_yaml::Value>(block.raw).expect("yaml");
+        let mapping = yaml.as_mapping().expect("mapping");
+
+        assert_eq!(
+            yaml_string(mapping, "description"),
+            Some("First line\nSecond: line\n")
+        );
+        assert_eq!(yaml_string(mapping, "type"), Some("design"));
+        assert_eq!(yaml_string(mapping, "summary"), Some("Example"));
+        parse_doc_frontmatter_strict(Path::new("doc.md"), &updated).expect("valid locked schema");
+    }
+
+    #[test]
+    fn migrate_preserves_quoted_colon_value() {
+        let raw = "---\ntitle: \"Foo: bar\"\nowner: codex\n---\n\n# Example\n";
+        let updated = migrate_doc_content(
+            Path::new("docs/design/sample/1_overview.md"),
+            Path::new("docs/design/sample/1_overview.md"),
+            raw,
+        )
+        .expect("migrate")
+        .expect("changed");
+        let block = split_frontmatter(&updated)
+            .expect("split")
+            .expect("frontmatter");
+        let yaml = serde_yaml::from_str::<serde_yaml::Value>(block.raw).expect("yaml");
+        let mapping = yaml.as_mapping().expect("mapping");
+
+        assert_eq!(yaml_string(mapping, "title"), Some("Foo: bar"));
+        assert_eq!(yaml_string(mapping, "type"), Some("design"));
+        assert_eq!(yaml_string(mapping, "summary"), Some("Example"));
     }
 }
