@@ -1,0 +1,16 @@
+{
+  "description": "Orbit project-learning reminder injection for PreToolUse on file tools",
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Edit|Write|Read",
+        "hooks": [
+          {
+            "type": "command",
+            "command": ".grok/hooks/orbit-learning-reminder"
+          }
+        ]
+      }
+    ]
+  }
+}

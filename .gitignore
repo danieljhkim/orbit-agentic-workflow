@@ -11,7 +11,9 @@ agentspace
 !.claude/hooks/
 !.codex/config.toml
 !.gemini/settings.json
+!.grok/
 !.grok/config.toml
+!.grok/hooks/
 # ...except the published plugin's MCP registration, which ships in the package.
 !plugin/.mcp.json
 
