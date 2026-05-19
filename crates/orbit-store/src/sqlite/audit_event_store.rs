@@ -41,6 +41,7 @@ pub struct AuditEventInsertParams {
 pub struct AuditEventFilter {
     pub since: Option<DateTime<Utc>>,
     pub tool_name: Option<String>,
+    pub target_type: Option<String>,
     pub status: Option<AuditEventStatus>,
     pub role: Option<String>,
     pub limit: usize,
@@ -170,6 +171,10 @@ impl Store {
         if let Some(ref tool) = filter.tool_name {
             conditions.push(format!("tool_name = ?{}", param_values.len() + 1));
             param_values.push(Box::new(tool.clone()));
+        }
+        if let Some(ref target_type) = filter.target_type {
+            conditions.push(format!("target_type = ?{}", param_values.len() + 1));
+            param_values.push(Box::new(target_type.clone()));
         }
         if let Some(ref status) = filter.status {
             conditions.push(format!("status = ?{}", param_values.len() + 1));
@@ -902,6 +907,33 @@ mod tests {
         assert_eq!(by_id.job_run_id.as_deref(), Some("jrun-xyz"));
         assert_eq!(by_id.activity_id.as_deref(), Some("agent_implement"));
         assert_eq!(by_id.step_index, Some(2));
+    }
+
+    #[test]
+    fn list_audit_events_filters_by_target_type_kind() {
+        let store = Store::open_in_memory().expect("open store");
+        let mut hook = sample_params();
+        hook.execution_id = "exec-hook".to_string();
+        hook.target_type = Some("learning_injected".to_string());
+        store
+            .insert_audit_event_record(&hook)
+            .expect("insert hook event");
+
+        let mut tool = sample_params();
+        tool.execution_id = "exec-tool".to_string();
+        tool.target_type = Some("tool".to_string());
+        store
+            .insert_audit_event_record(&tool)
+            .expect("insert tool event");
+
+        let events = store
+            .list_audit_events(&AuditEventFilter {
+                target_type: Some("learning_injected".to_string()),
+                ..AuditEventFilter::default()
+            })
+            .expect("list audit events");
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].execution_id, "exec-hook");
     }
 
     #[test]

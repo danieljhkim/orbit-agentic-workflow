@@ -2,6 +2,7 @@ pub mod adr;
 pub mod definitions;
 pub mod design;
 pub mod environment;
+pub mod hook;
 pub mod learning;
 pub mod log;
 pub mod mcp;
@@ -69,6 +70,7 @@ Definitions:
 
 Services:
   mcp         Register MCP client integrations and run the MCP server
+  hook        Run Orbit-owned editor hooks
   web         Run the Orbit dashboard
 
 Options:
@@ -114,6 +116,7 @@ pub enum Commands {
 
     // ── Services ──
     Mcp(mcp::McpCommand),
+    Hook(hook::HookCommand),
     Web(web::WebCommand),
 
     // ── hidden compatibility commands ──
@@ -148,6 +151,7 @@ impl Execute for Commands {
             Commands::Policy(cmd) => cmd.execute(runtime),
             Commands::Executor(cmd) => cmd.execute(runtime),
             Commands::Mcp(cmd) => cmd.execute(runtime),
+            Commands::Hook(cmd) => cmd.execute(runtime),
             Commands::Web(cmd) => cmd.execute(runtime),
             Commands::Skill(cmd) => cmd.execute(runtime),
             Commands::Logs(cmd) => cmd.execute(runtime),
@@ -161,8 +165,8 @@ mod tests {
     use clap::Parser;
 
     use super::{
-        Cli, Commands, design::DesignSubcommand, mcp::McpSubcommand, semantic::SemanticSubcommand,
-        web::WebSubcommand,
+        Cli, Commands, design::DesignSubcommand, hook::HookSubcommand, mcp::McpSubcommand,
+        semantic::SemanticSubcommand, web::WebSubcommand,
     };
 
     #[test]
@@ -197,6 +201,17 @@ mod tests {
                 WebSubcommand::Serve(_) => {}
             },
             _ => panic!("expected top-level web command"),
+        }
+    }
+
+    #[test]
+    fn cli_parses_hook_pretooluse() {
+        let cli = Cli::parse_from(["orbit", "hook", "pretooluse"]);
+        match cli.command {
+            Commands::Hook(command) => match command.command {
+                HookSubcommand::Pretooluse(_) => {}
+            },
+            _ => panic!("expected top-level hook command"),
         }
     }
 

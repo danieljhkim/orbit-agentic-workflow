@@ -25,6 +25,7 @@ pub mod graph;
 pub mod init;
 pub mod job;
 pub mod learning;
+pub mod learning_hook;
 pub mod pipeline_run;
 pub mod policy;
 pub mod semantic;

@@ -19,9 +19,22 @@ impl OrbitRuntime {
         role: Option<String>,
         limit: usize,
     ) -> Result<Vec<AuditEvent>, OrbitError> {
+        self.list_audit_events_with_kind(since, tool, None, status, role, limit)
+    }
+
+    pub fn list_audit_events_with_kind(
+        &self,
+        since: Option<DateTime<Utc>>,
+        tool: Option<String>,
+        target_type: Option<String>,
+        status: Option<AuditEventStatus>,
+        role: Option<String>,
+        limit: usize,
+    ) -> Result<Vec<AuditEvent>, OrbitError> {
         self.stores().audit_events().list(&AuditEventFilter {
             since,
             tool_name: tool,
+            target_type,
             status,
             role,
             limit,
