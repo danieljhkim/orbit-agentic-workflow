@@ -752,12 +752,24 @@ function readPath(obj, path) {
   return cur;
 }
 
+let currentScoreboardSort = { columnKey: null, dir: -1 };
+
+function setScoreboardSort(key) {
+  if (currentScoreboardSort.columnKey === key) {
+    currentScoreboardSort.dir = -currentScoreboardSort.dir;
+  } else {
+    currentScoreboardSort = { columnKey: key, dir: -1 };
+  }
+  renderScoreboard(lastSummary);
+}
+
 function renderScoreboard(summary) {
   const body = $("scoreboard-body");
+  lastSummary = summary;
 
   const agentsMap = (summary && summary.agents) || {};
   const entries = Object.entries(agentsMap);
-  $("scoreboard-count").textContent = `${entries.length} agents`;
+  $("scoreboard-count").textContent = `${entries.length} Agents`;
 
   if (entries.length === 0) {
     syncNodes(body, [el("div", { class: "empty-state" }, [
@@ -773,92 +785,23 @@ function renderScoreboard(summary) {
     .filter(([, agent]) => scoreboardSignalForColumns(agent, OTHER_SCOREBOARD_COLUMNS) > 0)
     .sort(([a], [b]) => a.localeCompare(b));
 
-  const sections = [
-    buildLeaderboardMatrix(canonicalRows, ALL_SCOREBOARD_SECTIONS, { showSectionDividers: true }),
-    renderDuelMatrixSection(summary),
-  ];
-  if (otherRows.length > 0) {
-    sections.push(
-      buildLeaderboardMatrix(
-        otherRows,
-        [{ title: "Attribution Cleanup", columns: OTHER_SCOREBOARD_COLUMNS }],
-        { showSectionDividers: true },
-      ),
-    );
+  let sectionsToRender = ALL_SCOREBOARD_SECTIONS;
+  const showAttribution = otherRows.length > 0;
+  if (showAttribution) {
+    sectionsToRender = ALL_SCOREBOARD_SECTIONS.concat([
+      { title: "Attribution Cleanup", columns: OTHER_SCOREBOARD_COLUMNS }
+    ]);
   }
+
+  const allRows = canonicalRows.concat(otherRows);
+
+  const sections = [
+    renderUnifiedScoreboardGrid(allRows, sectionsToRender, showAttribution),
+  ];
 
   syncNodes(body, [el("div", { class: "scoreboard-sections" }, sections)]);
 }
 
-function canonicalScoreboardRows(agentsMap) {
-  return CANONICAL_SCOREBOARD_FAMILIES.map((family) => [family, agentsMap[family] || {}]);
-}
-
-function scoreboardSignalForColumns(agent, columns) {
-  return columns.reduce((total, col) => {
-    if (col.key === "agent") return total;
-    if (col.format === "pair") {
-      const pair = formatScoreboardPair(agent, col);
-      return total + (pair.zero ? 0 : 1);
-    }
-    const value = col.compute ? col.compute(agent) : readPath(agent, col.key);
-    return total + Math.abs(asScoreboardNumber(value));
-  }, 0);
-}
-
-function buildLeaderboardMatrix(rows, sectionList, opts = {}) {
-  if (!rows.length) {
-    return el("div", { class: "empty-state compact", text: "No rows." });
-  }
-
-  const showSectionDividers = opts.showSectionDividers !== false;
-  const table = el("table", { class: "sb-leaderboard" });
-  const thead = el("thead");
-  const headRow = el("tr");
-  headRow.appendChild(el("th", { class: "sb-metric-head", text: "metric" }));
-  for (const [name] of rows) {
-    const th = el("th", {
-      class: "sb-agent-head clickable",
-      text: name,
-      title: `${name} — click to filter audit by role`,
-    });
-    th.addEventListener("click", () => navigateToRole(name));
-    headRow.appendChild(th);
-  }
-  thead.appendChild(headRow);
-  table.appendChild(thead);
-
-  const tbody = el("tbody");
-  const columnCount = rows.length + 1;
-  for (const section of sectionList) {
-    if (showSectionDividers) {
-      tbody.appendChild(sectionDividerRow(section.title, columnCount));
-    }
-    for (const col of section.columns.filter((candidate) => candidate.key !== "agent")) {
-      const rowMax = rowMaxValue(rows, col);
-      const tr = el("tr");
-      tr.dataset.key = `scoreboard-${section.title}-${col.key}`;
-      tr.appendChild(el("td", {
-        class: "sb-metric-label",
-        text: col.label,
-        title: col.title || col.label,
-      }));
-      for (const [name, agent] of rows) {
-        const value = scoreboardColumnValue(agent, col);
-        const isLeader = rowMax > 0 && value === rowMax;
-        const td = col.format === "pair"
-          ? pairMetricCell(agent, col, rowMax, isLeader)
-          : metricCell(agent, col, rowMax, isLeader);
-        td.dataset.agent = name;
-        td.dataset.metric = col.key;
-        tr.appendChild(td);
-      }
-      tbody.appendChild(tr);
-    }
-  }
-  table.appendChild(tbody);
-  return table;
-}
 
 function rowMaxValue(rows, col) {
   return rows.reduce((max, [, agent]) => Math.max(max, scoreboardColumnValue(agent, col)), 0);
@@ -872,46 +815,6 @@ function scoreboardColumnValue(agent, col) {
   return Math.max(0, asScoreboardNumber(value));
 }
 
-function metricCell(agent, col, rowMax, isLeader) {
-  const value = asScoreboardNumber(col.compute ? col.compute(agent) : readPath(agent, col.key));
-  const td = el("td", {
-    class: `sb-metric-cell num${value === 0 ? " zero" : ""}${isLeader ? " sb-leader" : ""}`,
-    title: `${col.title || col.label}: ${value}`,
-  }, metricNodes(value, rowMax, isLeader));
-  return td;
-}
-
-function pairMetricCell(agent, col, rowMax, isLeader) {
-  const pair = formatScoreboardPair(agent, col);
-  const td = el("td", {
-    class: `sb-metric-cell num${pair.zero ? " zero" : ""}${isLeader ? " sb-leader" : ""}`,
-    title: pair.title,
-  }, [
-    metricBar(pair.left, rowMax),
-    el("span", { class: "sb-pair" }, pairTextNodes(pair.left, pair.right, pair.zero)),
-    ...(isLeader ? [leaderBadge()] : []),
-  ]);
-  return td;
-}
-
-function metricNodes(value, rowMax, isLeader) {
-  return [
-    metricBar(value, rowMax),
-    value === 0
-      ? emptyScoreboardNode()
-      : el("span", { class: "sb-value", text: fmtScoreboardCount(value) }),
-    ...(isLeader ? [leaderBadge()] : []),
-  ];
-}
-
-function metricBar(value, rowMax) {
-  const num = Math.max(0, asScoreboardNumber(value));
-  const width = num === 0 ? 6 : scaledMetricWidth(num, rowMax);
-  return el("span", {
-    class: `sb-bar${num === 0 ? " sb-bar-empty" : ""}`,
-    style: { width: `${width}px` },
-  });
-}
 
 function scaledMetricWidth(value, rowMax) {
   const max = Math.max(0, asScoreboardNumber(rowMax));
@@ -923,79 +826,141 @@ function leaderBadge() {
   return el("span", { class: "sb-leader-badge", text: "▲", title: "row leader" });
 }
 
-function emptyScoreboardNode() {
-  return el("span", { class: "sb-empty", text: "—" });
-}
-
-function pairTextNodes(left, right, zero) {
-  if (zero) return [emptyScoreboardNode()];
-  return [
-    left === 0 ? emptyScoreboardNode() : el("span", { class: "sb-value", text: fmtScoreboardCount(left) }),
-    "/",
-    right === 0 ? emptyScoreboardNode() : el("span", { class: "sb-pair-right", text: fmtScoreboardCount(right) }),
-  ];
-}
-
-function sectionDividerRow(title, columnCount) {
-  const tr = el("tr", { class: "sb-section-divider" });
-  const td = el("td", { text: title });
-  td.colSpan = columnCount;
-  tr.appendChild(td);
-  return tr;
-}
-
-function renderDuelMatrixSection(summary) {
-  const matrix = summary?.planning_duels?.head_to_head || {};
-  const families = Array.isArray(matrix.families) && matrix.families.length
-    ? matrix.families
-    : CANONICAL_SCOREBOARD_FAMILIES;
-  const cells = matrix.cells || {};
-  const rows = families.map((family) => [family, cells[family] || {}]);
-
-  const section = el("section", { class: "scoreboard-section scoreboard-matrix-section" });
-  section.appendChild(
-    el("div", { class: "scoreboard-section-header" }, [
-      el("span", { class: "scoreboard-section-title", text: "Duel Matrix" }),
-      el("span", { class: "scoreboard-section-count", text: `${families.length}x${families.length}` }),
-    ]),
-  );
-
-  const table = el("table", { class: "scoreboard-table duel-matrix-table" });
-  const thead = el("thead");
-  const headRow = el("tr");
-  headRow.appendChild(el("th", { text: "family" }));
-  for (const family of families) {
-    headRow.appendChild(el("th", { class: "num", text: family }));
+function renderUnifiedScoreboardGrid(rows, sections, showAttribution) {
+  if (!rows.length) {
+    return el("div", { class: "empty-state compact", text: "No rows." });
   }
-  thead.appendChild(headRow);
-  table.appendChild(thead);
 
-  const tbody = el("tbody");
-  for (const [family, row] of rows) {
-    const tr = el("tr");
-    const label = el("td", {
-      class: "agent clickable",
-      text: family,
-      title: `${family} — click to filter audit by role`,
+  const table = el("table", { class: "scoreboard-table sb-unified-grid" });
+  const thead = el("thead");
+  
+  const categoryRow = el("tr");
+  categoryRow.appendChild(el("th", { class: "sb-agent-head", text: "AGENT", rowSpan: 2 }));
+  
+  for (const section of sections) {
+    const validCols = section.columns.filter(c => c.key !== "agent");
+    const th = el("th", { 
+      class: "sb-category-head", 
+      text: section.title, 
+      colSpan: validCols.length 
     });
-    label.addEventListener("click", () => navigateToRole(family));
-    tr.appendChild(label);
-    for (const opponent of families) {
-      const cell = row[opponent] || {};
-      const wins = asScoreboardNumber(cell.wins);
-      const losses = asScoreboardNumber(cell.losses);
-      const runs = asScoreboardNumber(cell.runs);
-      tr.appendChild(el("td", {
-        class: `num${runs === 0 ? " zero" : ""}`,
-        title: `${family} vs ${opponent}: ${wins} wins / ${losses} losses (${runs} runs)`,
-      }, pairTextNodes(wins, losses, runs === 0)));
+    th.style.textAlign = "center";
+    categoryRow.appendChild(th);
+  }
+  thead.appendChild(categoryRow);
+  
+  const headerRow = el("tr");
+  for (const section of sections) {
+    for (const col of section.columns.filter(c => c.key !== "agent")) {
+      const th = el("th", { class: "sb-metric-head clickable num", title: col.title || col.label });
+      th.addEventListener("click", () => setScoreboardSort(col.key));
+      
+      const content = [el("span", { text: col.label })];
+      if (currentScoreboardSort.columnKey === col.key) {
+        content.push(el("span", { class: "sort-arrow", text: currentScoreboardSort.dir === 1 ? " ▲" : " ▼" }));
+      }
+      th.appendChild(el("div", { class: "sb-th-content" }, content));
+      headerRow.appendChild(th);
+    }
+  }
+  thead.appendChild(headerRow);
+  table.appendChild(thead);
+  
+  let sortedRows = rows.slice();
+  if (currentScoreboardSort.columnKey) {
+    let sortCol = null;
+    for (const sec of sections) {
+      sortCol = sec.columns.find(c => c.key === currentScoreboardSort.columnKey);
+      if (sortCol) break;
+    }
+    if (sortCol) {
+      sortedRows.sort((a, b) => {
+        const valA = scoreboardColumnValue(a[1], sortCol);
+        const valB = scoreboardColumnValue(b[1], sortCol);
+        if (valA !== valB) {
+          return (valA - valB) * currentScoreboardSort.dir;
+        }
+        return a[0].localeCompare(b[0]);
+      });
+    }
+  }
+  
+  const tbody = el("tbody");
+  
+  const colMaxes = new Map();
+  for (const section of sections) {
+    for (const col of section.columns.filter(c => c.key !== "agent")) {
+      colMaxes.set(col.key, rowMaxValue(sortedRows, col));
+    }
+  }
+
+  for (const [name, agent] of sortedRows) {
+    const tr = el("tr");
+    const tdAgent = el("td", { class: "sb-agent-cell agent clickable", text: name });
+    tdAgent.addEventListener("click", () => navigateToRole(name));
+    tr.appendChild(tdAgent);
+    
+    for (const section of sections) {
+      for (const col of section.columns.filter(c => c.key !== "agent")) {
+        const rowMax = colMaxes.get(col.key);
+        const value = scoreboardColumnValue(agent, col);
+        const isLeader = rowMax > 0 && value === rowMax;
+        
+        const td = el("td", { class: `sb-metric-cell num${value === 0 ? " zero" : ""}${isLeader ? " sb-leader" : ""}` });
+        td.title = `${col.title || col.label}: ${value}`;
+        
+        const pct = rowMax > 0 ? Math.min(100, Math.max(2, (value / rowMax) * 100)) : 0;
+
+        if (col.format === "pair") {
+          const pair = formatScoreboardPair(agent, col);
+          const bar = el("div", { class: "perf-bar" });
+          bar.style.width = `${pct}%`;
+          
+          if (pair.zero) {
+            td.appendChild(el("span", { class: "zero-dot", innerHTML: "&middot;" }));
+          } else {
+            if (value > 0) td.appendChild(bar);
+            const valSpan = el("span", { class: "sb-value" });
+            valSpan.appendChild(pairTextNodesSpan(pair.left, pair.right, pair.zero));
+            if (isLeader) valSpan.appendChild(leaderBadge());
+            td.appendChild(valSpan);
+          }
+        } else {
+          const bar = el("div", { class: "perf-bar" });
+          bar.style.width = `${pct}%`;
+          
+          if (value === 0) {
+            td.appendChild(el("span", { class: "zero-dot", innerHTML: "&middot;" }));
+          } else {
+            if (value > 0) td.appendChild(bar);
+            const valSpan = el("span", { class: "sb-value" }, [
+              document.createTextNode(fmtScoreboardCount(value)),
+              ...(isLeader ? [leaderBadge()] : [])
+            ]);
+            td.appendChild(valSpan);
+          }
+        }
+        tr.appendChild(td);
+      }
     }
     tbody.appendChild(tr);
   }
   table.appendChild(tbody);
-  section.appendChild(table);
-  return section;
+  return table;
 }
+
+function pairTextNodesSpan(left, right, zero) {
+  const frag = document.createDocumentFragment();
+  if (zero) {
+    frag.appendChild(el("span", { class: "sb-empty", text: "—" }));
+    return frag;
+  }
+  frag.appendChild(left === 0 ? el("span", { class: "sb-empty", text: "—" }) : el("span", { class: "sb-value", text: fmtScoreboardCount(left) }));
+  frag.appendChild(document.createTextNode("/"));
+  frag.appendChild(right === 0 ? el("span", { class: "sb-empty", text: "—" }) : el("span", { class: "sb-pair-right", text: fmtScoreboardCount(right) }));
+  return frag;
+}
+
 
 function evidenceCount(learning) {
   return Array.isArray(learning && learning.evidence) ? learning.evidence.length : 0;

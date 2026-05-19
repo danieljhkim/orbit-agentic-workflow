@@ -1116,113 +1116,84 @@
         padding: 6px 12px;
       }
 
-      table.sb-leaderboard {
+      
+      .sb-unified-grid {
         width: 100%;
         border-collapse: collapse;
-        font-size: 12px;
+        font-size: 11px;
         table-layout: fixed;
       }
-
-      table.sb-leaderboard th,
-      table.sb-leaderboard td {
-        padding: 3px 8px;
+      .sb-unified-grid th, .sb-unified-grid td {
+        padding: 4px 6px;
         border-bottom: 1px solid var(--border);
         white-space: nowrap;
         overflow: hidden;
         text-overflow: ellipsis;
       }
-
-      table.sb-leaderboard th {
-        text-align: left;
+      .sb-unified-grid th {
         color: var(--fg-dim);
-        font-size: 11px;
         font-weight: 600;
         text-transform: uppercase;
-        letter-spacing: 0;
         position: sticky;
         top: 0;
         z-index: 1;
         background: var(--bg-elev);
+      }
+      .sb-unified-grid th.sb-category-head {
+        border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+        font-size: 10px;
+        padding-bottom: 2px;
+        box-shadow: none;
+      }
+      .sb-unified-grid th.sb-metric-head {
+        padding-top: 2px;
         box-shadow: 0 1px 0 var(--border);
       }
-
-      table.sb-leaderboard th:first-child,
-      table.sb-leaderboard td.sb-metric-label {
-        width: 170px;
+      .sb-unified-grid th.sb-agent-head {
+        box-shadow: 0 1px 0 var(--border);
       }
-
-      table.sb-leaderboard th.sb-agent-head,
-      table.sb-leaderboard td.sb-metric-cell {
+      .sb-unified-grid tbody tr:hover {
+        background: rgba(255, 255, 255, 0.03);
+      }
+      .sb-unified-grid td.sb-metric-cell {
+        position: relative;
         text-align: right;
         font-family: var(--font-mono);
       }
-
-      table.sb-leaderboard th.sb-agent-head.clickable {
+      .sb-unified-grid td.sb-agent-cell {
+        font-weight: 500;
         color: var(--accent-hover);
+        text-align: left;
+      }
+      .sb-unified-grid th .sb-th-content {
+        display: flex;
+        justify-content: flex-end;
+        align-items: center;
+        gap: 2px;
+      }
+      .sb-unified-grid th.clickable {
         cursor: pointer;
       }
-
-      table.sb-leaderboard th.sb-agent-head.clickable:hover {
-        color: var(--accent);
-      }
-
-      table.sb-leaderboard tbody tr:not(.sb-section-divider) {
-        transition: background-color 0.2s ease;
-      }
-
-      table.sb-leaderboard tbody tr:not(.sb-section-divider):hover {
-        background: rgba(255, 255, 255, 0.03);
-      }
-
-      .sb-metric-label {
+      .sb-unified-grid th.clickable:hover {
         color: var(--fg);
-        font-weight: 500;
       }
-
-      .sb-bar {
-        display: inline-block;
-        height: 6px;
+      .perf-bar {
+        position: absolute;
+        bottom: 1px;
+        left: 0;
+        height: 2px;
         background: var(--accent);
-        border-radius: 2px;
-        vertical-align: middle;
-        margin-right: 6px;
+        opacity: 0.5;
+        border-radius: 1px;
       }
-
-      .sb-bar-empty {
-        background: transparent;
-        border: 1px solid var(--border);
-        box-sizing: border-box;
-        opacity: 0.65;
-      }
-
-      .sb-leader .sb-bar:not(.sb-bar-empty) {
+      .sb-leader .perf-bar {
         background: var(--accent-hover);
+        opacity: 1;
+      }
+      .zero-dot {
+        color: transparent;
       }
 
-      .sb-leader-badge {
-        color: var(--accent-hover);
-        font-size: 10px;
-        margin-left: 4px;
-      }
-
-      .sb-empty {
-        color: var(--border);
-        font-family: var(--font-mono);
-      }
-
-      .sb-pair {
-        display: inline-block;
-      }
-
-      .sb-section-divider td {
-        padding: 4px 8px;
-        background: #050505;
-        color: var(--fg-dim);
-        font-size: 10px;
-        font-weight: 600;
-        letter-spacing: 0;
-        text-transform: uppercase;
-      }
       
       .subtabs {
         display: flex;
@@ -2195,7 +2166,21 @@
       .log-foot .filter-pill.on:hover { border-color: var(--accent-hover); }
       .log-foot .right { margin-left: auto; cursor: pointer; user-select: none; }
       .log-foot .right.on { color: var(--accent); }
-    </style>
+    
+      .sb-leader-badge {
+        color: var(--accent-hover);
+        font-size: 10px;
+        margin-left: 4px;
+      }
+      .sb-empty {
+        color: var(--border);
+        font-family: var(--font-mono);
+      }
+      .sb-pair-right {
+        color: var(--fg-dim);
+      }
+
+</style>
   </head>
   <body>
     <header>

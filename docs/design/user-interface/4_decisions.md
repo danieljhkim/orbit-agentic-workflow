@@ -1,7 +1,7 @@
 ---
 title: "User Interface — Decisions"
 owner: gemini
-last_updated: 2026-05-18
+last_updated: 2026-05-19
 status: Draft
 feature: user-interface
 doc_role: decisions
@@ -112,6 +112,23 @@ Rejected alternative: pure heatmap matrix. Rejected because color alone hides pr
 - No single Rust code anchor; this is enforced by dashboard rendering and design review, and workspace-local ADR comments should not be embedded in shipped dashboard assets.
 - Cost: The denser matrix needs careful row-height discipline when new metrics are added.
 
+
+
+## ADR-0169 — Unified Matrix Grid Scoreboard (Agent-Major)
+
+**Status:** Accepted · 2026-05 · [ORB-00155]
+
+**Context.** The Scoreboard tab rendered six separate tables stacked vertically, making cross-table comparison difficult. We needed a layout that allowed at-a-glance cross-agent comparison without excessive vertical scroll or visual clutter from zero values.
+
+Rejected Alternative 1: Separate cards per metric. Rejected because comparing all metrics for a single agent requires jumping across 6 cards, defeating the cross-metric comparison requirement.
+Rejected Alternative 2: Dropdown to select agent. Rejected because hiding agents prevents at-a-glance comparison.
+
+**Decision.** Replace the stacked tables with a single agent-major Matrix Grid layout. Agents are rows, metrics are columns grouped under colspan category headers. Zero values render as an empty dot, and relative performance is encoded with a CSS `perf-bar` proportional to the column max.
+
+**Consequences.**
+- A reader can identify the leading agent for any metric via visual encoding without reading digits.
+- Cost: Calculating maximums per column for the performance bars requires an extra pass over the data before rendering the rows.
+
 ## Task References
 
 - [T20260427-29] introduced the Canon Refined UI direction.
@@ -122,5 +139,6 @@ Rejected alternative: pure heatmap matrix. Rejected because color alone hides pr
 - [ORB-00144] grouped scoreboard metrics and added knowledge counters plus duel matrix data.
 - [ORB-00146] extracted the dashboard and JSON API into the new `orbit-dashboard` internal crate (this document).
 - [ORB-00154] unified the Scoreboard tab into a metric-major leaderboard matrix.
+- [ORB-00155] unified the Scoreboard tab into an agent-major leaderboard matrix.
 
 > Resolve any task above with `orbit task show <ID>` or `git log --grep=<ID>`.

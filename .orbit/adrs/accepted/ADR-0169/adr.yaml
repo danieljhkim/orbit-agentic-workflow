@@ -1,0 +1,17 @@
+schema_version: 1
+id: ADR-0169
+title: Unified Matrix Grid Scoreboard (Agent-Major)
+status: accepted
+owner: gemini
+created_at: 2026-05-19T02:45:23.967148Z
+accepted_at: 2026-05-19T02:45:28.837300Z
+last_updated: 2026-05-19T02:46:11.705056Z
+related_features:
+- user-interface
+related_tasks:
+- ORB-00155
+supersedes:
+- ADR-0168
+legacy_ids: []
+validation_warnings: []
+legacy_validation: none
