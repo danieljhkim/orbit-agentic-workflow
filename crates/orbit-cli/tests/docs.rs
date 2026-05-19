@@ -71,6 +71,93 @@ fn cli_docs_add_is_idempotent_and_rejects_dot_orbit() {
 }
 
 #[test]
+fn cli_task_show_with_context_includes_related_docs_json() {
+    let workspace = TestWorkspace::new();
+    workspace.write("crates/orbit-cli/src/command/docs.rs", "// fixture\n");
+    workspace.write(
+        "docs/cli.md",
+        "---\ntype: design\nsummary: CLI docs command design\npaths: [\"crates/orbit-cli/**\"]\n---\n# CLI Docs\n\nBody\n",
+    );
+
+    let task = workspace.run_json(
+        &[
+            "task",
+            "add",
+            "--title",
+            "Wire docs",
+            "--description",
+            "Exercise docs context injection.",
+            "--context",
+            "file:crates/orbit-cli/src/command/docs.rs",
+            "--json",
+        ],
+        "task add",
+    );
+    let task_id = task["id"].as_str().expect("task id");
+
+    let shown = workspace.run_json(
+        &[
+            "task",
+            "show",
+            task_id,
+            "--with-context",
+            "--max-docs",
+            "1",
+            "--json",
+        ],
+        "task show with context",
+    );
+    assert_eq!(
+        shown["related_docs"],
+        json!([
+            {
+                "path": "docs/cli.md",
+                "type": "design",
+                "summary": "CLI docs command design",
+                "excerpt": "CLI Docs",
+                "matched_by": ["path:crates/orbit-cli/**"]
+            }
+        ])
+    );
+
+    let plain = workspace.run_json(&["task", "show", task_id, "--json"], "task show");
+    assert!(plain.get("related_docs").is_none());
+}
+
+#[test]
+fn cli_task_show_with_context_returns_empty_docs_when_roots_are_empty() {
+    let workspace = TestWorkspace::new();
+    workspace.write(".orbit/config.toml", "[docs]\nroots = []\n");
+    workspace.write("crates/orbit-cli/src/command/docs.rs", "// fixture\n");
+    workspace.write(
+        "docs/cli.md",
+        "---\ntype: design\nsummary: CLI docs command design\npaths: [\"crates/orbit-cli/**\"]\n---\n# CLI Docs\n",
+    );
+    let task = workspace.run_json(
+        &[
+            "task",
+            "add",
+            "--title",
+            "No roots",
+            "--description",
+            "Exercise empty docs roots.",
+            "--context",
+            "file:crates/orbit-cli/src/command/docs.rs",
+            "--json",
+        ],
+        "task add",
+    );
+    let task_id = task["id"].as_str().expect("task id");
+
+    let shown = workspace.run_json(
+        &["task", "show", task_id, "--with-context", "--json"],
+        "task show with context",
+    );
+
+    assert_eq!(shown["related_docs"], json!([]));
+}
+
+#[test]
 fn mcp_docs_tools_are_listed_and_callable_through_tool_run() {
     let workspace = TestWorkspace::new();
     workspace.write(

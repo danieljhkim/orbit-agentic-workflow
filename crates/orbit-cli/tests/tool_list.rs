@@ -68,6 +68,46 @@ fn tool_list_json_includes_parameter_schema() {
 }
 
 #[test]
+fn tool_list_json_includes_task_show_context_parameters() {
+    let temp = tempdir().expect("tempdir");
+    let home = temp.path().join("home");
+    let work = temp.path().join("work");
+    std::fs::create_dir_all(&home).expect("create home");
+    std::fs::create_dir_all(&work).expect("create work");
+
+    let output = cargo_bin_cmd!("orbit")
+        .current_dir(&work)
+        .env("HOME", &home)
+        .env("USERPROFILE", &home)
+        .env_remove("ORBIT_ROOT")
+        .args(["tool", "list", "--json"])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+
+    let tools: Vec<serde_json::Value> = serde_json::from_slice(&output).expect("tool list JSON");
+    let task_show = tools
+        .iter()
+        .find(|tool| tool["name"] == "orbit.task.show")
+        .expect("task show tool");
+    let parameters = task_show["parameters"]
+        .as_array()
+        .expect("parameters array");
+    assert!(parameters.iter().any(|param| {
+        param["name"] == "with_context"
+            && param["param_type"] == "boolean"
+            && param["required"] == false
+    }));
+    assert!(parameters.iter().any(|param| {
+        param["name"] == "max_docs"
+            && param["param_type"] == "integer"
+            && param["required"] == false
+    }));
+}
+
+#[test]
 fn tool_show_displays_lock_reservation_shapes() {
     let temp = tempdir().expect("tempdir");
     let home = temp.path().join("home");
