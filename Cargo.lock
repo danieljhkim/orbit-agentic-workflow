@@ -2065,6 +2065,8 @@ dependencies = [
  "colored",
  "comfy-table",
  "csv",
+ "fs2",
+ "libc",
  "orbit-common",
  "orbit-core",
  "orbit-dashboard",
@@ -2078,6 +2080,7 @@ dependencies = [
  "tokio",
  "toml",
  "tower",
+ "tracing",
  "url",
 ]
 

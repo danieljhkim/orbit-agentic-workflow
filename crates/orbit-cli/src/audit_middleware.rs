@@ -195,6 +195,22 @@ pub fn extract_command_meta(cmd: &Commands) -> CommandMeta {
                 job_run_id: None,
             }
         }
+        Commands::Hook(cmd) => {
+            use crate::command::hook::HookSubcommand;
+            let sub = match &cmd.command {
+                HookSubcommand::Pretooluse(_) => "pretooluse",
+            };
+            CommandMeta {
+                command: "hook".to_string(),
+                subcommand: Some(sub.to_string()),
+                tool_name: None,
+                target_type: Some("hook".to_string()),
+                target_id: None,
+                role: "hook".to_string(),
+                arguments_json: None,
+                job_run_id: None,
+            }
+        }
         Commands::Tool(tool_cmd) => {
             use crate::command::tool::ToolSubcommand;
             let (sub, tool_name, target_type, target_id) = match &tool_cmd.command {

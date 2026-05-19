@@ -39,6 +39,7 @@ mod parse;
 use clap::Parser;
 use orbit_core::{ActorIdentity, OrbitRuntime};
 
+use crate::command::hook::{HookCommand, HookSubcommand};
 use crate::command::learning::{LearningCommand, LearningSubcommand};
 use crate::command::mcp::{McpCommand, McpSubcommand};
 use crate::command::tool::{OutputFormat, ToolSubcommand};
@@ -51,6 +52,7 @@ fn main() {
     let cli = command::Cli::parse();
     let root_override = cli.root.clone();
     let tool_run_json_output = tool_run_json_output_preference(&cli.command);
+    let hook_pretooluse = is_hook_pretooluse_command(&cli.command);
 
     // Commands that run without a pre-existing runtime
     match cli.command {
@@ -112,6 +114,9 @@ fn main() {
     let runtime = match OrbitRuntime::initialize_with_root_override(root_override.as_deref()) {
         Ok(runtime) => runtime,
         Err(err) => {
+            if hook_pretooluse {
+                return;
+            }
             print_error(&err, tool_run_json_output);
             std::process::exit(1);
         }
@@ -136,6 +141,9 @@ fn main() {
     };
 
     if let Err(err) = result {
+        if hook_pretooluse {
+            return;
+        }
         print_error(&err, tool_run_json_output);
         std::process::exit(1);
     }
@@ -158,6 +166,15 @@ fn tool_run_json_output_preference(command: &Commands) -> Option<bool> {
         },
         _ => None,
     }
+}
+
+fn is_hook_pretooluse_command(command: &Commands) -> bool {
+    matches!(
+        command,
+        Commands::Hook(HookCommand {
+            command: HookSubcommand::Pretooluse(_)
+        })
+    )
 }
 
 fn print_error(error: &orbit_core::OrbitError, tool_run_json_output: Option<bool>) {

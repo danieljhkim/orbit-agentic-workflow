@@ -54,6 +54,9 @@ pub struct AuditListArgs {
     /// Filter by tool name
     #[arg(long)]
     pub tool: Option<String>,
+    /// Filter by event kind (alias for target_type)
+    #[arg(long)]
+    pub kind: Option<String>,
     /// Filter by status
     #[arg(long)]
     pub status: Option<AuditEventStatus>,
@@ -71,8 +74,14 @@ pub struct AuditListArgs {
 impl Execute for AuditListArgs {
     fn execute(self, runtime: &OrbitRuntime) -> Result<(), OrbitError> {
         let since = self.since.map(|s| parse_since(&s)).transpose()?;
-        let events =
-            runtime.list_audit_events(since, self.tool, self.status, self.role, self.limit)?;
+        let events = runtime.list_audit_events_with_kind(
+            since,
+            self.tool,
+            self.kind,
+            self.status,
+            self.role,
+            self.limit,
+        )?;
 
         if self.json {
             let values: Vec<Value> = events.iter().map(audit_event_to_json).collect();
