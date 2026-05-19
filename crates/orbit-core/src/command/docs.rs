@@ -434,14 +434,14 @@ fn infer_type_and_tags(repo_relative: &Path) -> (DocType, Vec<String>) {
     if components.len() >= 3 && components[0] == "docs" && components[1] == "design-patterns" {
         return (DocType::Pattern, Vec::new());
     }
-    if components.iter().any(|component| *component == "runbooks") {
+    if components.contains(&"runbooks") {
         return (DocType::Runbook, Vec::new());
     }
     if repo_relative
         .file_stem()
         .and_then(|value| value.to_str())
         .is_some_and(|stem| stem.eq_ignore_ascii_case("glossary"))
-        || components.iter().any(|component| *component == "glossary")
+        || components.contains(&"glossary")
     {
         return (DocType::Glossary, Vec::new());
     }

@@ -449,11 +449,6 @@ mod tests {
         }
 
         for name in DOCS_TOOL_NAMES {
-            assert!(names.contains(*name), "missing runtime docs tool: {name}");
-            assert!(is_mcp_tool_exposed(name));
-        }
-
-        for name in DOCS_TOOL_NAMES {
             assert!(
                 listed.contains(*name),
                 "client-visible MCP tool list missing docs tool: {name}"

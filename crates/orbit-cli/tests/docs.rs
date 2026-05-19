@@ -100,7 +100,7 @@ fn mcp_docs_tools_are_listed_and_callable_through_tool_run() {
         &["tool", "run", "orbit.docs.list", "--input", "{}"],
         "tool run docs list",
     );
-    assert!(output.as_array().expect("array").len() >= 1);
+    assert!(!output.as_array().expect("array").is_empty());
 }
 
 struct TestWorkspace {
