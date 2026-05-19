@@ -2,13 +2,13 @@
   "hooks": {
     "PreToolUse": [
       {
-        "matcher": "Edit|Write|Read",
         "hooks": [
           {
-            "type": "command",
-            "command": ".claude/hooks/orbit-learning-reminder"
+            "command": ".claude/hooks/orbit-learning-reminder",
+            "type": "command"
           }
-        ]
+        ],
+        "matcher": "Edit|Write|Read"
       }
     ]
   }

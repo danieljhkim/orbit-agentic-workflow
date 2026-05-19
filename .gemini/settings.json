@@ -1,4 +1,18 @@
 {
+  "hooks": {
+    "BeforeTool": [
+      {
+        "hooks": [
+          {
+            "command": ".gemini/hooks/orbit-learning-reminder",
+            "name": "orbit-learning-reminder",
+            "type": "command"
+          }
+        ],
+        "matcher": "*"
+      }
+    ]
+  },
   "mcpServers": {
     "orbit": {
       "args": [
