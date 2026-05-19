@@ -2253,8 +2253,6 @@ function renderSparkline(buckets) {
   svg.appendChild(path);
 }
 
-}
-
 function refreshLabel() {
   if (activeTab === "diagnostics") return `diagnostics/${activeDiagSubtab}`;
   if (activeTab === "run-detail") return `run/${activeRunId || "?"}`;
