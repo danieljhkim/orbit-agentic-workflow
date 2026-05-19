@@ -117,6 +117,72 @@ fn per_call_cap_limits_rendered_learning_count() {
     assert_eq!(rendered, 2, "stdout: {stdout}");
 }
 
+#[test]
+fn codex_format_emits_json_envelope_and_audit_event() {
+    let workspace = TestWorkspace::new();
+    let learning = workspace.add_learning("Codex hook output must be JSON", &["src/**"]);
+    let learning_id = learning["id"].as_str().expect("learning id");
+
+    let output = workspace.run_hook_with_args(
+        &["--format", "codex"],
+        r#"{"tool_name":"Bash","tool_input":{"command":"cat src/lib.rs"}}"#,
+        &[("ORBIT_SESSION_ID", "codex-format")],
+        "codex format hook",
+    );
+    let rendered: Value = serde_json::from_slice(&output.stdout).expect("codex JSON stdout");
+    assert_eq!(
+        rendered["hookSpecificOutput"]["hookEventName"].as_str(),
+        Some("PreToolUse")
+    );
+    assert!(
+        rendered["hookSpecificOutput"]["additionalContext"]
+            .as_str()
+            .expect("additional context")
+            .contains(&format!("- [{learning_id}] Codex hook output must be JSON"))
+    );
+
+    let events = workspace.run_json(
+        &["audit", "list", "--kind", "learning_injected", "--json"],
+        "audit list",
+    );
+    let event = &events.as_array().expect("audit rows")[0];
+    assert_eq!(event["tool_name"], "Bash");
+    assert_eq!(event["target_id"], "src/lib.rs");
+}
+
+#[test]
+fn grok_format_matches_claude_plaintext_and_gemini_uses_json() {
+    let workspace = TestWorkspace::new();
+    workspace.add_learning("Shared format test learning", &["src/**"]);
+    let payload = r#"{"tool_name":"Read","path":"src/lib.rs"}"#;
+
+    let claude = workspace.run_hook_with_args(
+        &["--format", "claude"],
+        payload,
+        &[("ORBIT_SESSION_ID", "format-claude")],
+        "claude format hook",
+    );
+    let grok = workspace.run_hook_with_args(
+        &["--format", "grok"],
+        payload,
+        &[("ORBIT_SESSION_ID", "format-grok")],
+        "grok format hook",
+    );
+    assert_eq!(claude.stdout, grok.stdout);
+
+    let gemini = workspace.run_hook_with_args(
+        &["--format", "gemini"],
+        r#"{"tool_name":"read_file","tool_input":{"path":"src/lib.rs"}}"#,
+        &[("ORBIT_SESSION_ID", "format-gemini")],
+        "gemini format hook",
+    );
+    let rendered: Value = serde_json::from_slice(&gemini.stdout).expect("gemini JSON stdout");
+    assert_eq!(
+        rendered["hookSpecificOutput"]["hookEventName"].as_str(),
+        Some("BeforeTool")
+    );
+}
+
 #[cfg(unix)]
 #[test]
 fn missing_session_uses_tmpdir_parent_pid_state_file() {
@@ -182,6 +248,18 @@ impl TestWorkspace {
 
     fn run_hook(&self, stdin: &str, envs: &[(&str, &str)], label: &str) -> Output {
         self.run(&["hook", "pretooluse"], Some(stdin), envs, label)
+    }
+
+    fn run_hook_with_args(
+        &self,
+        extra_args: &[&str],
+        stdin: &str,
+        envs: &[(&str, &str)],
+        label: &str,
+    ) -> Output {
+        let mut args = vec!["hook", "pretooluse"];
+        args.extend_from_slice(extra_args);
+        self.run(&args, Some(stdin), envs, label)
     }
 
     fn run_json(&self, args: &[&str], label: &str) -> Value {
