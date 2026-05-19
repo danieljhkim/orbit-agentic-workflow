@@ -1,6 +1,5 @@
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::sync::atomic::{AtomicU64, Ordering};
 
 use orbit_embed::{EmbedWorker, VectorStore};
 use orbit_policy::PolicyEngine;
@@ -232,25 +231,14 @@ fn workspace_slug(repo_root: &Path) -> String {
         .to_string()
 }
 
-pub(super) struct TempDir(PathBuf);
-
-impl Drop for TempDir {
-    fn drop(&mut self) {
-        let _ = std::fs::remove_dir_all(&self.0);
-    }
-}
-
-static IN_MEMORY_COUNTER: AtomicU64 = AtomicU64::new(0);
+pub(super) type TempDir = tempfile::TempDir;
 
 pub(super) fn build_context_in_memory() -> Result<(OrbitContext, TempDir), OrbitError> {
-    let n = IN_MEMORY_COUNTER.fetch_add(1, Ordering::Relaxed);
-    let data_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .unwrap_or(Path::new("."))
-        .join("tmp")
-        .join(format!("in-memory-{n}"));
-    std::fs::create_dir_all(&data_root).map_err(|e| OrbitError::Io(e.to_string()))?;
-    let guard = TempDir(data_root.clone());
+    let guard = tempfile::Builder::new()
+        .prefix("orbit-in-memory-")
+        .tempdir()
+        .map_err(|e| OrbitError::Io(e.to_string()))?;
+    let data_root = guard.path().to_path_buf();
 
     let context = build_context_from_roots(&data_root, &data_root)?;
     Ok((context, guard))
