@@ -18,11 +18,29 @@ pub struct HookPayload {
     pub target_path: String,
 }
 
+pub const CLAUDE_PRETOOLUSE_TOOLS: &[&str] = &["Edit", "Write", "Read"];
+pub const CODEX_PRETOOLUSE_TOOLS: &[&str] = &["Bash", "apply_patch", "mcp"];
+pub const GEMINI_PRETOOLUSE_TOOLS: &[&str] = &[
+    "read_file",
+    "write_file",
+    "edit",
+    "replace",
+    "run_shell_command",
+    "Read",
+    "Write",
+    "Edit",
+    "Bash",
+];
+
 pub fn parse_payload(stdin: &str) -> Option<HookPayload> {
+    parse_payload_with_tools(stdin, CLAUDE_PRETOOLUSE_TOOLS)
+}
+
+pub fn parse_payload_with_tools(stdin: &str, accepted_tools: &[&str]) -> Option<HookPayload> {
     let value: Value = serde_json::from_str(stdin.trim()).ok()?;
     let object = value.as_object()?;
     let tool_name = string_field(&value, &["tool_name", "toolName"])?;
-    if !matches!(tool_name, "Edit" | "Write" | "Read") {
+    if !tool_name_allowed(tool_name, accepted_tools) {
         return None;
     }
 
@@ -31,17 +49,81 @@ pub fn parse_payload(stdin: &str) -> Option<HookPayload> {
         .or_else(|| object.get("toolInput"))
         .and_then(Value::as_object);
     let target_path = tool_input
-        .and_then(|input| {
-            ["file_path", "filePath", "path"]
-                .iter()
-                .find_map(|key| input.get(*key).and_then(trimmed_string))
+        .and_then(first_path_in_object)
+        .or_else(|| first_path_in_value(&value))
+        .or_else(|| {
+            tool_input
+                .and_then(|input| {
+                    ["patch", "diff"]
+                        .iter()
+                        .find_map(|key| input.get(*key).and_then(trimmed_string))
+                })
+                .and_then(path_from_patch)
         })
-        .or_else(|| string_field(&value, &["file_path", "filePath", "path"]))?;
+        .or_else(|| {
+            tool_input
+                .and_then(|input| {
+                    ["command", "cmd"]
+                        .iter()
+                        .find_map(|key| input.get(*key).and_then(trimmed_string))
+                })
+                .and_then(path_from_shell_command)
+        })?;
 
     Some(HookPayload {
         tool_name: tool_name.to_string(),
         target_path: target_path.to_string(),
     })
+}
+
+fn tool_name_allowed(tool_name: &str, accepted_tools: &[&str]) -> bool {
+    accepted_tools.iter().any(|accepted| {
+        tool_name == *accepted
+            || (*accepted == "mcp" && tool_name.starts_with("mcp__"))
+            || (*accepted == "mcp" && tool_name.starts_with("mcp."))
+    })
+}
+
+fn first_path_in_value(value: &Value) -> Option<&str> {
+    let object = value.as_object()?;
+    first_path_in_object(object)
+}
+
+fn first_path_in_object(object: &serde_json::Map<String, Value>) -> Option<&str> {
+    const STRING_KEYS: &[&str] = &[
+        "file_path",
+        "filePath",
+        "path",
+        "absolute_file_path",
+        "absoluteFilePath",
+        "fileName",
+        "filename",
+        "name",
+    ];
+    const ARRAY_KEYS: &[&str] = &[
+        "file_paths",
+        "filePaths",
+        "paths",
+        "files",
+        "fileNames",
+        "filenames",
+        "absolute_file_paths",
+        "absoluteFilePaths",
+    ];
+
+    STRING_KEYS
+        .iter()
+        .find_map(|key| object.get(*key).and_then(trimmed_string))
+        .or_else(|| {
+            ARRAY_KEYS.iter().find_map(|key| {
+                object
+                    .get(*key)
+                    .and_then(Value::as_array)
+                    .into_iter()
+                    .flatten()
+                    .find_map(trimmed_string)
+            })
+        })
 }
 
 fn string_field<'a>(value: &'a Value, names: &[&str]) -> Option<&'a str> {
@@ -55,6 +137,49 @@ fn trimmed_string(value: &Value) -> Option<&str> {
         .as_str()
         .map(str::trim)
         .filter(|value| !value.is_empty())
+}
+
+fn path_from_patch(patch: &str) -> Option<&str> {
+    patch.lines().find_map(|line| {
+        let line = line.trim();
+        [
+            "*** Update File: ",
+            "*** Add File: ",
+            "*** Delete File: ",
+            "*** Move to: ",
+        ]
+        .iter()
+        .find_map(|prefix| line.strip_prefix(prefix).map(str::trim))
+        .filter(|value| !value.is_empty())
+    })
+}
+
+fn path_from_shell_command(command: &str) -> Option<&str> {
+    command
+        .split_whitespace()
+        .map(|token| {
+            token.trim_matches(|ch: char| {
+                matches!(
+                    ch,
+                    '"' | '\'' | '`' | ',' | ';' | ':' | '(' | ')' | '[' | ']' | '{' | '}'
+                )
+            })
+        })
+        .filter(|token| !token.is_empty())
+        .find(|token| looks_like_path(token))
+}
+
+fn looks_like_path(token: &str) -> bool {
+    if token.starts_with('-') || matches!(token, "|" | ">" | "<" | "&&" | "||") {
+        return false;
+    }
+    token.contains('/')
+        || token.starts_with('.')
+        || [
+            ".rs", ".toml", ".json", ".md", ".yaml", ".yml", ".txt", ".sh", ".py",
+        ]
+        .iter()
+        .any(|suffix| token.ends_with(suffix))
 }
 
 pub fn caps_from_env() -> LearningInjectionCaps {
@@ -184,6 +309,32 @@ mod tests {
         assert!(parse_payload(r#"{"tool_name":"Bash","path":"src/lib.rs"}"#).is_none());
         assert!(parse_payload(r#"{"tool_name":"Edit","path":"   "}"#).is_none());
         assert!(parse_payload(r#"{"tool_name":"Edit"}"#).is_none());
+    }
+
+    #[test]
+    fn parse_payload_with_tools_accepts_codex_path_shapes() {
+        let bash = parse_payload_with_tools(
+            r#"{"tool_name":"Bash","tool_input":{"command":"sed -n '1,20p' crates/orbit-core/src/lib.rs"}}"#,
+            CODEX_PRETOOLUSE_TOOLS,
+        )
+        .expect("bash payload");
+        assert_eq!(bash.tool_name, "Bash");
+        assert_eq!(bash.target_path, "crates/orbit-core/src/lib.rs");
+
+        let patch = parse_payload_with_tools(
+            r#"{"tool_name":"apply_patch","tool_input":{"patch":"*** Begin Patch\n*** Update File: crates/orbit-cli/src/main.rs\n@@\n*** End Patch\n"}}"#,
+            CODEX_PRETOOLUSE_TOOLS,
+        )
+        .expect("patch payload");
+        assert_eq!(patch.tool_name, "apply_patch");
+        assert_eq!(patch.target_path, "crates/orbit-cli/src/main.rs");
+
+        let mcp = parse_payload_with_tools(
+            r#"{"tool_name":"mcp__plugin_orbit__fs_read","tool_input":{"filePaths":["README.md","Cargo.toml"]}}"#,
+            CODEX_PRETOOLUSE_TOOLS,
+        )
+        .expect("mcp payload");
+        assert_eq!(mcp.target_path, "README.md");
     }
 
     #[test]

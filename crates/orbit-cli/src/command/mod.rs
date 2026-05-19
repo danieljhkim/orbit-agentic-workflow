@@ -206,7 +206,7 @@ mod tests {
 
     #[test]
     fn cli_parses_hook_pretooluse() {
-        let cli = Cli::parse_from(["orbit", "hook", "pretooluse"]);
+        let cli = Cli::parse_from(["orbit", "hook", "pretooluse", "--format", "codex"]);
         match cli.command {
             Commands::Hook(command) => match command.command {
                 HookSubcommand::Pretooluse(_) => {}

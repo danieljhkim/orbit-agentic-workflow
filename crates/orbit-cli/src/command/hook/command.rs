@@ -20,7 +20,7 @@ impl Execute for HookCommand {
 
 #[derive(Subcommand)]
 pub enum HookSubcommand {
-    /// Inject project-learning reminders for Claude Code PreToolUse hooks
+    /// Inject project-learning reminders for agent PreToolUse hooks
     #[command(name = "pretooluse")]
     Pretooluse(PretooluseArgs),
 }

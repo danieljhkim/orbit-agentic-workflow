@@ -43,6 +43,9 @@ pub struct WorkspaceInitArgs {
     /// Set up MCP client integrations for auto-detected providers.
     #[arg(long)]
     pub mcp: bool,
+    /// Set up PreToolUse learning hooks for auto-detected agent providers.
+    #[arg(long)]
+    pub hooks: bool,
     /// Seed docs/design/CONVENTIONS.md when it does not already exist.
     #[arg(long)]
     pub design: bool,
@@ -98,6 +101,7 @@ impl WorkspaceInitArgs {
             OrbitRuntime::resolve_bootstrap_roots_for_cwd(&cwd, root_override)?;
         let registry_path = workspace_registry::registry_path_for(&global_root);
         let mcp = self.mcp;
+        let hooks = self.hooks;
         let inject_rules = self.inject_agent_rules;
         let init_result = self.execute_at_path(&cwd, &orbit_dir, &global_root, &registry_path)?;
 
@@ -118,6 +122,18 @@ impl WorkspaceInitArgs {
             }
         } else {
             println!("  mcp:       skipped (pass --mcp to set up integrations)");
+        }
+
+        if hooks {
+            let providers =
+                crate::command::hook::install::install_for_workspace(&init_result.root)?;
+            if providers.is_empty() {
+                println!("  hooks:     no providers auto-detected");
+            } else {
+                println!("  hooks:     {}", providers.join(", "));
+            }
+        } else {
+            println!("  hooks:     skipped (pass --hooks to set up integrations)");
         }
 
         if inject_rules {
@@ -256,6 +272,7 @@ mod tests {
             name: None,
             base_branch: "main".to_string(),
             mcp: true,
+            hooks: false,
             design: false,
             inject_agent_rules: false,
             refresh_defaults: false,
@@ -319,6 +336,7 @@ mod tests {
             name: None,
             base_branch: "main".to_string(),
             mcp: false,
+            hooks: false,
             design: false,
             inject_agent_rules: false,
             refresh_defaults: false,
@@ -374,6 +392,7 @@ mod tests {
             name: None,
             base_branch: "main".to_string(),
             mcp: false,
+            hooks: false,
             design: false,
             inject_agent_rules: false,
             refresh_defaults: false,
@@ -422,6 +441,7 @@ mod tests {
             name: None,
             base_branch: "main".to_string(),
             mcp: false,
+            hooks: false,
             design: false,
             inject_agent_rules: false,
             refresh_defaults: false,
@@ -466,6 +486,7 @@ mod tests {
             name: None,
             base_branch: "main".to_string(),
             mcp: false,
+            hooks: false,
             design: false,
             inject_agent_rules: false,
             refresh_defaults: false,
@@ -510,6 +531,7 @@ mod tests {
             name: None,
             base_branch: "main".to_string(),
             mcp: false,
+            hooks: false,
             design: false,
             inject_agent_rules: false,
             refresh_defaults: false,
@@ -554,6 +576,7 @@ mod tests {
             name: Some("custom-root".to_string()),
             base_branch: "main".to_string(),
             mcp: false,
+            hooks: false,
             design: false,
             inject_agent_rules: false,
             refresh_defaults: false,
@@ -620,6 +643,7 @@ mod tests {
             name: None,
             base_branch: "main".to_string(),
             mcp: false,
+            hooks: false,
             design: false,
             inject_agent_rules: false,
             refresh_defaults: false,
@@ -662,6 +686,7 @@ mod tests {
             name: None,
             base_branch: "main".to_string(),
             mcp: false,
+            hooks: false,
             design: true,
             inject_agent_rules: false,
             refresh_defaults: false,
@@ -709,6 +734,7 @@ mod tests {
             name: None,
             base_branch: "main".to_string(),
             mcp: false,
+            hooks: false,
             design: false,
             inject_agent_rules: false,
             refresh_defaults: false,
@@ -759,6 +785,7 @@ mod tests {
             name: None,
             base_branch: "main".to_string(),
             mcp: false,
+            hooks: false,
             design: false,
             inject_agent_rules: false,
             refresh_defaults: false,
@@ -807,6 +834,7 @@ mod tests {
             name: Some("custom-root-git".to_string()),
             base_branch: "main".to_string(),
             mcp: false,
+            hooks: false,
             design: false,
             inject_agent_rules: false,
             refresh_defaults: false,
@@ -989,13 +1017,22 @@ impl Execute for WorkspaceTeardownArgs {
             }
         }
 
-        // 3. Delete .orbit/ directory
+        // 3. Remove repo-local hook integrations while preserving user-authored hook entries
+        let hook_providers = crate::command::hook::install::uninstall_for_workspace(repo_root)?;
+        if !hook_providers.is_empty() {
+            removed.push(format!(
+                "removed hook integrations for {}",
+                hook_providers.join(", ")
+            ));
+        }
+
+        // 4. Delete .orbit/ directory
         if orbit_dir.is_dir() {
             std::fs::remove_dir_all(&orbit_dir).map_err(|e| OrbitError::Io(e.to_string()))?;
             removed.push(format!("deleted {}", orbit_dir.display()));
         }
 
-        // 4. Print summary
+        // 5. Print summary
         println!("teardown complete:");
         for item in &removed {
             println!("  - {item}");

@@ -7,7 +7,8 @@ use clap::Args;
 use fs2::FileExt;
 use orbit_common::types::{AuditEventStatus, LearningInjectionCaps, LearningReminder};
 use orbit_core::command::learning_hook::{
-    ORBIT_SESSION_ID_ENV, caps_from_env, merge_state, parse_payload, parse_state_json,
+    CLAUDE_PRETOOLUSE_TOOLS, CODEX_PRETOOLUSE_TOOLS, GEMINI_PRETOOLUSE_TOOLS, ORBIT_SESSION_ID_ENV,
+    caps_from_env, merge_state, parse_payload_with_tools, parse_state_json,
     reminders_from_search_results,
 };
 use orbit_core::{
@@ -17,30 +18,39 @@ use orbit_core::{
 use serde_json::json;
 
 use crate::command::Execute;
+use crate::command::hook::render::{HookOutputFormat, render_reminders};
 
 const LOCK_RETRY_INTERVAL: Duration = Duration::from_millis(5);
 const LOCK_RETRY_BUDGET: Duration = Duration::from_millis(50);
 
 #[derive(Args)]
-pub struct PretooluseArgs {}
+pub struct PretooluseArgs {
+    /// Render output in the hook format expected by this agent.
+    #[arg(long, value_enum, default_value_t = HookOutputFormat::Claude)]
+    pub format: HookOutputFormat,
+}
 
 impl Execute for PretooluseArgs {
     fn execute(self, runtime: &OrbitRuntime) -> Result<(), OrbitError> {
         let start = Instant::now();
-        if let Err(error) = run_pretooluse(runtime, start) {
+        if let Err(error) = run_pretooluse(runtime, start, self.format) {
             tracing::warn!(error = %redact_sensitive_env_text(&error), "learning hook failed open");
         }
         Ok(())
     }
 }
 
-fn run_pretooluse(runtime: &OrbitRuntime, start: Instant) -> Result<(), String> {
+fn run_pretooluse(
+    runtime: &OrbitRuntime,
+    start: Instant,
+    format: HookOutputFormat,
+) -> Result<(), String> {
     let mut stdin = String::new();
     std::io::stdin()
         .read_to_string(&mut stdin)
         .map_err(|error| format!("read stdin: {error}"))?;
 
-    let Some(payload) = parse_payload(&stdin) else {
+    let Some(payload) = parse_payload_with_tools(&stdin, accepted_tools(format)) else {
         return Ok(());
     };
 
@@ -78,9 +88,18 @@ fn run_pretooluse(runtime: &OrbitRuntime, start: Instant) -> Result<(), String> 
         start.elapsed(),
     )?;
 
-    let block = orbit_common::types::render_reminder_block(&admitted);
-    println!("{block}");
+    let output = render_reminders(format, &admitted)
+        .map_err(|error| format!("render reminders: {error}"))?;
+    println!("{output}");
     Ok(())
+}
+
+fn accepted_tools(format: HookOutputFormat) -> &'static [&'static str] {
+    match format {
+        HookOutputFormat::Claude | HookOutputFormat::Grok => CLAUDE_PRETOOLUSE_TOOLS,
+        HookOutputFormat::Codex => CODEX_PRETOOLUSE_TOOLS,
+        HookOutputFormat::Gemini => GEMINI_PRETOOLUSE_TOOLS,
+    }
 }
 
 fn learning_hook_tmpdir() -> PathBuf {

@@ -5,3 +5,11 @@ args = [
 ]
 command = "orbit"
 enabled = true
+
+[[hooks.PreToolUse]]
+matcher = "^(Bash|apply_patch|mcp__.*|mcp\\..*)$"
+
+[[hooks.PreToolUse.hooks]]
+type = "command"
+command = '"$(git rev-parse --show-toplevel)/.codex/hooks/orbit-learning-reminder"'
+statusMessage = "Loading Orbit learnings"
