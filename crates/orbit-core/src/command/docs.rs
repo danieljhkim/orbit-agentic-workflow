@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::fmt;
 use std::fs;
 use std::io::Write;
@@ -6,7 +6,9 @@ use std::path::{Component, Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::str::FromStr;
 
-use orbit_common::types::OrbitError;
+use orbit_common::types::{OrbitError, Task};
+use orbit_common::utility::glob::{match_glob, normalize_glob_path};
+use orbit_common::utility::selector::anchor_path;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use serde_json::json;
 
@@ -14,6 +16,7 @@ use crate::OrbitRuntime;
 
 const DEFAULT_DOC_ROOT: &str = "docs/";
 const DOC_TYPES: &[&str] = &["design", "pattern", "context", "glossary", "runbook"];
+const DEFAULT_RELATED_DOC_LIMIT: usize = 5;
 
 #[cfg(test)]
 thread_local! {
@@ -165,6 +168,23 @@ pub struct DocSearchResult {
     pub matched_by: Vec<String>,
 }
 
+/// Related-doc projection emitted by `task show --with-context`.
+///
+/// JSON schema:
+/// `{"path": string, "type": string, "summary": string, "excerpt": string, "matched_by": string[]}`.
+/// The `type` value is one of `design`, `pattern`, `context`, `glossary`, or
+/// `runbook`. `matched_by` contains stable `path:<glob>` and `feature:<slug>`
+/// markers explaining why the doc was selected.
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+pub struct TaskRelatedDoc {
+    pub path: String,
+    #[serde(rename = "type")]
+    pub doc_type: DocType,
+    pub summary: String,
+    pub excerpt: String,
+    pub matched_by: Vec<String>,
+}
+
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 pub struct DocAddOutcome {
     pub path: String,
@@ -281,6 +301,27 @@ impl OrbitRuntime {
         Ok(scored)
     }
 
+    pub fn related_docs_for_task(
+        &self,
+        task: &Task,
+        limit: Option<usize>,
+    ) -> Result<Vec<TaskRelatedDoc>, OrbitError> {
+        let roots = read_task_context_docs_roots_from_config_path(&self.config_path())?;
+        if roots.is_empty() {
+            return Ok(Vec::new());
+        }
+        // Tasks do not yet have a first-class `related_features` field, so the
+        // agent-facing feature join uses normalized task tags as the feature
+        // selectors until that storage field exists.
+        related_docs_for_context(
+            &self.paths().repo_root,
+            &roots,
+            &task.context_files,
+            &task.tags,
+            limit,
+        )
+    }
+
     pub fn add_docs_root(&self, path: &str) -> Result<DocAddOutcome, OrbitError> {
         add_docs_root(&self.paths().repo_root, &self.config_path(), path)
     }
@@ -314,6 +355,28 @@ fn read_docs_roots_from_config_path(path: &Path) -> Result<Vec<String>, OrbitErr
     let raw = fs::read_to_string(path)
         .map_err(|error| OrbitError::Io(format!("read {}: {error}", path.display())))?;
     parse_docs_roots_from_config_toml(&raw)
+}
+
+fn read_task_context_docs_roots_from_config_path(path: &Path) -> Result<Vec<String>, OrbitError> {
+    if !path.exists() {
+        return Ok(default_doc_roots());
+    }
+    let raw = fs::read_to_string(path)
+        .map_err(|error| OrbitError::Io(format!("read {}: {error}", path.display())))?;
+    parse_task_context_docs_roots_from_config_toml(&raw)
+}
+
+fn parse_task_context_docs_roots_from_config_toml(raw: &str) -> Result<Vec<String>, OrbitError> {
+    if raw.trim().is_empty() {
+        return Ok(default_doc_roots());
+    }
+    let parsed = toml::from_str::<DocsConfigFile>(raw).map_err(|error| {
+        OrbitError::InvalidInput(format!("invalid docs config in config.toml: {error}"))
+    })?;
+    Ok(match parsed.docs {
+        Some(section) => section.roots.unwrap_or_default(),
+        None => default_doc_roots(),
+    })
 }
 
 fn default_doc_roots() -> Vec<String> {
@@ -807,6 +870,162 @@ fn score_doc_record(record: DocRecord, query_lower: &str) -> Option<DocSearchRes
         score,
         matched_by,
     })
+}
+
+#[derive(Debug)]
+struct RelatedDocCandidate {
+    record: DocRecord,
+    score: usize,
+    matched_by: BTreeSet<String>,
+}
+
+fn related_docs_for_context(
+    repo_root: &Path,
+    roots: &[String],
+    context_files: &[String],
+    related_features: &[String],
+    limit: Option<usize>,
+) -> Result<Vec<TaskRelatedDoc>, OrbitError> {
+    let limit = limit.unwrap_or(DEFAULT_RELATED_DOC_LIMIT);
+    if limit == 0 {
+        return Ok(Vec::new());
+    }
+
+    let context_paths = context_files
+        .iter()
+        .filter_map(|selector| context_selector_path(repo_root, selector))
+        .collect::<Vec<_>>();
+    let features = related_features
+        .iter()
+        .map(|feature| feature.trim().to_ascii_lowercase())
+        .filter(|feature| !feature.is_empty())
+        .collect::<BTreeSet<_>>();
+    if context_paths.is_empty() && features.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let mut candidates = BTreeMap::<String, RelatedDocCandidate>::new();
+    for record in walk_docs_roots(repo_root, roots)? {
+        let mut score = 0usize;
+        let mut matched_by = BTreeSet::new();
+
+        for glob in &record.frontmatter.paths {
+            let Some(normalized_glob) = normalize_doc_path_glob(glob) else {
+                continue;
+            };
+            for context_path in &context_paths {
+                if doc_path_glob_matches_context(&normalized_glob, context_path)? {
+                    score += 200 + normalized_glob.len();
+                    matched_by.insert(format!("path:{glob}"));
+                    break;
+                }
+            }
+        }
+
+        for feature in &record.frontmatter.related_features {
+            let normalized = feature.trim().to_ascii_lowercase();
+            if !normalized.is_empty() && features.contains(&normalized) {
+                score += 160 + normalized.len();
+                matched_by.insert(format!("feature:{feature}"));
+            }
+        }
+
+        if score == 0 {
+            continue;
+        }
+
+        candidates
+            .entry(record.path.clone())
+            .and_modify(|candidate| {
+                candidate.score += score;
+                candidate.matched_by.extend(matched_by.iter().cloned());
+            })
+            .or_insert(RelatedDocCandidate {
+                record,
+                score,
+                matched_by,
+            });
+    }
+
+    let mut ranked = candidates.into_values().collect::<Vec<_>>();
+    ranked.sort_by(|left, right| {
+        right
+            .score
+            .cmp(&left.score)
+            .then_with(|| left.record.path.cmp(&right.record.path))
+    });
+    ranked.truncate(limit);
+
+    ranked
+        .into_iter()
+        .map(|candidate| {
+            let shown = show_doc(repo_root, roots, &candidate.record.path)?;
+            Ok(TaskRelatedDoc {
+                path: candidate.record.path,
+                doc_type: candidate.record.frontmatter.doc_type,
+                summary: candidate.record.frontmatter.summary.clone(),
+                excerpt: doc_excerpt(&shown.body, &candidate.record.frontmatter.summary),
+                matched_by: candidate.matched_by.into_iter().collect(),
+            })
+        })
+        .collect()
+}
+
+fn context_selector_path(repo_root: &Path, selector: &str) -> Option<String> {
+    let anchor = anchor_path(selector).ok()?;
+    let relative = if anchor.is_absolute() {
+        anchor.strip_prefix(repo_root).ok()?.to_path_buf()
+    } else {
+        anchor
+    };
+    normalize_glob_path(&path_to_slash_string(&relative)).ok()
+}
+
+fn normalize_doc_path_glob(glob: &str) -> Option<String> {
+    normalize_glob_path(glob).ok()
+}
+
+fn doc_path_glob_matches_context(glob: &str, context_path: &str) -> Result<bool, OrbitError> {
+    if match_glob(glob, context_path)? {
+        return Ok(true);
+    }
+    let literal_prefix = glob.trim_end_matches('/');
+    Ok(!contains_glob_operator(literal_prefix)
+        && context_path
+            .strip_prefix(literal_prefix)
+            .is_some_and(|rest| rest.starts_with('/')))
+}
+
+fn contains_glob_operator(value: &str) -> bool {
+    value.contains('*') || value.contains('?')
+}
+
+fn doc_excerpt(body: &str, fallback: &str) -> String {
+    for line in body.lines() {
+        let trimmed = line
+            .trim()
+            .trim_start_matches('#')
+            .trim()
+            .trim_matches('`')
+            .trim();
+        if !trimmed.is_empty() && trimmed != "---" {
+            return truncate_excerpt(trimmed);
+        }
+    }
+    truncate_excerpt(fallback)
+}
+
+fn truncate_excerpt(value: &str) -> String {
+    const MAX_EXCERPT_CHARS: usize = 160;
+    let mut out = String::new();
+    for (index, ch) in value.chars().enumerate() {
+        if index == MAX_EXCERPT_CHARS {
+            out.push_str("...");
+            return out;
+        }
+        out.push(ch);
+    }
+    out
 }
 
 fn add_docs_root(
@@ -1494,6 +1713,74 @@ mod tests {
                 .unwrap(),
             vec!["docs/", "apps/*/docs/"]
         );
+    }
+
+    #[test]
+    fn task_context_docs_roots_skip_explicit_empty_or_unset_roots() {
+        assert_eq!(
+            parse_task_context_docs_roots_from_config_toml("[docs]\n").unwrap(),
+            Vec::<String>::new()
+        );
+        assert_eq!(
+            parse_task_context_docs_roots_from_config_toml("[docs]\nroots = []\n").unwrap(),
+            Vec::<String>::new()
+        );
+        assert_eq!(
+            parse_task_context_docs_roots_from_config_toml("").unwrap(),
+            vec!["docs/"]
+        );
+    }
+
+    #[test]
+    fn related_docs_match_context_files_against_doc_paths() {
+        let dir = tempdir().expect("tempdir");
+        let root = dir.path();
+        fs::create_dir_all(root.join("docs")).expect("docs dir");
+        fs::write(
+            root.join("docs/cli.md"),
+            "---\ntype: design\nsummary: CLI command design\npaths: [\"crates/orbit-cli/**\"]\n---\n# CLI Commands\n\nBody\n",
+        )
+        .expect("write doc");
+
+        let related = related_docs_for_context(
+            root,
+            &["docs/".to_string()],
+            &["file:crates/orbit-cli/src/command/docs.rs".to_string()],
+            &[],
+            Some(5),
+        )
+        .expect("related docs");
+
+        assert_eq!(related.len(), 1);
+        assert_eq!(related[0].path, "docs/cli.md");
+        assert_eq!(related[0].doc_type, DocType::Design);
+        assert_eq!(related[0].excerpt, "CLI Commands");
+        assert_eq!(related[0].matched_by, vec!["path:crates/orbit-cli/**"]);
+    }
+
+    #[test]
+    fn related_docs_match_task_features_against_doc_related_features() {
+        let dir = tempdir().expect("tempdir");
+        let root = dir.path();
+        fs::create_dir_all(root.join("docs")).expect("docs dir");
+        fs::write(
+            root.join("docs/orbit-docs.md"),
+            "---\ntype: context\nsummary: Orbit docs context\nrelated_features: [orbit-docs]\n---\nTask-time docs injection\n",
+        )
+        .expect("write doc");
+
+        let related = related_docs_for_context(
+            root,
+            &["docs/".to_string()],
+            &[],
+            &["Orbit-Docs".to_string()],
+            Some(5),
+        )
+        .expect("related docs");
+
+        assert_eq!(related.len(), 1);
+        assert_eq!(related[0].path, "docs/orbit-docs.md");
+        assert_eq!(related[0].matched_by, vec!["feature:orbit-docs"]);
     }
 
     #[test]

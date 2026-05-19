@@ -1,3 +1,5 @@
+use std::fs;
+
 use orbit_common::types::TaskStatus;
 use serde_json::{Value, json};
 
@@ -463,6 +465,47 @@ fn task_show_tool_includes_empty_tags_array() {
         .expect("task show tool succeeds");
 
     assert_eq!(shown.get("tags"), Some(&json!([])));
+}
+
+#[test]
+fn task_show_tool_with_context_includes_related_docs() {
+    let (_root, runtime, repo_root) = test_runtime();
+    fs::create_dir_all(repo_root.join("docs")).expect("docs dir");
+    fs::write(
+        repo_root.join("docs/cli.md"),
+        "---\ntype: design\nsummary: CLI command design\npaths: [\"crates/orbit-cli/**\"]\n---\n# CLI Commands\n",
+    )
+    .expect("write doc");
+    let task = create_task(
+        &runtime,
+        &repo_root,
+        "Show related docs",
+        "Exercise MCP context injection.",
+        TaskStatus::Backlog,
+        &["file:crates/orbit-cli/src/command/docs.rs"],
+    );
+
+    let shown = runtime
+        .execute_tool_command(
+            "orbit.task.show",
+            json!({ "id": task.id, "with_context": true, "max_docs": 1 }),
+            Some("codex".to_string()),
+            Some("gpt-5.5".to_string()),
+        )
+        .expect("task show tool succeeds");
+
+    assert_eq!(
+        shown.get("related_docs"),
+        Some(&json!([
+            {
+                "path": "docs/cli.md",
+                "type": "design",
+                "summary": "CLI command design",
+                "excerpt": "CLI Commands",
+                "matched_by": ["path:crates/orbit-cli/**"]
+            }
+        ]))
+    );
 }
 
 #[test]
