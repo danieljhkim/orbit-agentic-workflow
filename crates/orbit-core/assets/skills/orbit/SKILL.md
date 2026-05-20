@@ -27,7 +27,7 @@ Orbit tools are reachable via two surfaces. Both accept identical JSON arguments
 - Task lifecycle (`orbit.task.*`): both surfaces.
 - ADR artifacts (`orbit.adr.*`): both surfaces.
 - Graph read tools (`search`, `show`, `pack`, `callers`, `refs`, `implementors`, `deps`, `overview`, `history`): both surfaces.
-- Unified search (`orbit.search`): both surfaces. Lexical search works without setup; `semantic: true` and `related` require the search companion (`orbit semantic install`).
+- Unified search (`orbit.search`): both surfaces. Lexical search works without setup; `hybrid: true` and `semantic: "<task-id>"` require the search companion (`orbit semantic install`).
 - Semantic lifecycle tools (`orbit.semantic.install`, `orbit.semantic.uninstall`, `orbit.semantic.stats`, `orbit.semantic.index`): registered tool surface for managing the local embedding companion.
 - State handoff (`orbit.state.*`), graph writes, and duel/scoreboard tools: **CLI only** — used inside activity steps where the agent has shell access.
 
@@ -54,8 +54,8 @@ orbit tool run orbit.task.show --input '{"id": "<id>", "field": "plan", "model":
 orbit tool run orbit.task.list --input '{"status": "backlog", "model": "<agent-family>"}'       # List by status
 orbit tool run orbit.task.search --input '{"query": "search text", "model": "<agent-family>"}'  # Lexical title/description substring match
 orbit tool run orbit.search --input '{"query": "topic phrase", "limit": 5, "model": "<agent-family>"}'  # Lexical global search across tasks, docs, learnings, and ADRs
-orbit tool run orbit.search --input '{"query": "topic phrase", "semantic": true, "kind": "task", "limit": 5, "model": "<agent-family>"}'  # Hybrid BM25 + cosine over indexed task fields
-orbit tool run orbit.search --input '{"related": "<task-id>", "limit": 5, "model": "<agent-family>"}'        # Cosine neighbors of an indexed task
+orbit tool run orbit.search --input '{"query": "topic phrase", "hybrid": true, "kind": "task", "limit": 5, "model": "<agent-family>"}'  # Hybrid BM25 + cosine over indexed task fields
+orbit tool run orbit.search --input '{"semantic": "<task-id>", "limit": 5, "model": "<agent-family>"}'        # Cosine neighbors of an indexed task
 orbit tool run orbit.task.add --input '{"title": "...", "description": "...", "acceptance_criteria": ["..."], "workspace": ".", "model": "<agent-family>"}'
 orbit tool run orbit.task.update --input '{"id": "<id>", "plan": "...", "model": "<agent-family>"}'
 orbit tool run orbit.task.start --input '{"id": "<id>", "note": "...", "model": "<agent-family>"}' # backlog -> in-progress

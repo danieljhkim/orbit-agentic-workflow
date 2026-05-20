@@ -251,22 +251,49 @@ mod tests {
             "orbit",
             "search",
             "semantic search design",
-            "--semantic",
+            "--hybrid",
             "--kind",
             "task",
         ]);
         match cli.command {
             Commands::Search(args) => {
                 assert_eq!(args.query.as_deref(), Some("semantic search design"));
-                assert!(args.semantic);
+                assert!(args.hybrid);
+                assert_eq!(args.semantic, None);
             }
             _ => panic!("expected top-level search command"),
         }
     }
 
     #[test]
-    fn cli_rejects_search_query_with_related() {
-        assert!(Cli::try_parse_from(["orbit", "search", "query", "--related", "ORB-1"]).is_err());
+    fn cli_parses_top_level_search_semantic_neighbor() {
+        let cli = Cli::parse_from(["orbit", "search", "--semantic", "ORB-1"]);
+        match cli.command {
+            Commands::Search(args) => {
+                assert_eq!(args.query, None);
+                assert_eq!(args.semantic.as_deref(), Some("ORB-1"));
+            }
+            _ => panic!("expected top-level search command"),
+        }
+    }
+
+    #[test]
+    fn cli_rejects_search_query_with_semantic_neighbor() {
+        assert!(Cli::try_parse_from(["orbit", "search", "query", "--semantic", "ORB-1"]).is_err());
+    }
+
+    #[test]
+    fn cli_rejects_search_related_flag() {
+        let legacy_flag = concat!("--", "related");
+        assert!(Cli::try_parse_from(["orbit", "search", legacy_flag, "ORB-1"]).is_err());
+    }
+
+    #[test]
+    fn cli_rejects_search_semantic_without_value() {
+        assert!(
+            Cli::try_parse_from(["orbit", "search", "query", "--semantic", "--kind", "task"])
+                .is_err()
+        );
     }
 
     #[test]

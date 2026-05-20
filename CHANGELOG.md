@@ -4,6 +4,7 @@
 
 ### Breaking Changes
 
+- **`orbit search` flag rename**: free-text vector ranking is now `--hybrid` / `hybrid: true`; task-neighbor lookup is now `--semantic <id>` / `semantic: "<id>"`. The old `--semantic` boolean and `--related <id>` surfaces are hard-removed; JSON mode values are now `hybrid` and `neighbor`. Historical phase-1 audit payloads carrying `semantic: true` are orphaned by the no-shim rename. ([ORB-00204])
 - **Design-doc decay-check surface removed**: `orbit design check`, `orbit.design.check` MCP tool, the wrapper script, and `make check-design-docs` are gone. Use `orbit design init/list/show` + same-PR update rule. ([ORB-00112])
 - **Search namespace split**: `orbit.semantic.search`, `orbit.semantic.related`, and the `orbit-semantic` skill are removed in favor of `orbit.search` and `orbit-search`; `orbit semantic reindex` is now `orbit semantic index`. Historical `semantic.search` / `semantic.related` audit event names are orphaned by this hard break because there are no external audit-history consumers yet. ([ORB-00196])
 

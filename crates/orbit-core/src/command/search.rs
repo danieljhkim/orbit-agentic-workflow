@@ -75,15 +75,16 @@ impl FromStr for GlobalSearchKind {
 #[serde(rename_all = "lowercase")]
 pub enum GlobalSearchMode {
     Lexical,
-    Semantic,
-    Related,
+    Hybrid,
+    Neighbor,
 }
 
 #[derive(Debug, Clone)]
 pub struct GlobalSearchParams {
     pub query: Option<String>,
-    pub semantic: bool,
-    pub related: Option<String>,
+    // ADR-0175: hybrid free-text ranking and task-neighbor lookup are distinct modes.
+    pub hybrid: bool,
+    pub semantic: Option<String>,
     pub kind: GlobalSearchKind,
     pub limit: usize,
     pub field: Option<String>,
@@ -141,29 +142,29 @@ impl OrbitRuntime {
         let mut results = Vec::new();
         let mut notes = Vec::new();
 
-        if let Some(related_id) = params.related {
+        if let Some(semantic_id) = params.semantic {
             if params
                 .query
                 .as_deref()
                 .is_some_and(|query| !query.trim().is_empty())
             {
                 return Err(OrbitError::InvalidInput(
-                    "`query` and `related` are mutually exclusive".to_string(),
+                    "`query` and `semantic` are mutually exclusive".to_string(),
                 ));
             }
             if !matches!(params.kind, GlobalSearchKind::Task | GlobalSearchKind::All) {
                 return Err(OrbitError::InvalidInput(
-                    "`related` only supports --kind task or --kind all".to_string(),
+                    "`semantic` only supports --kind task or --kind all".to_string(),
                 ));
             }
             let related = self.semantic_related(SemanticRelatedParams {
-                task_id: related_id,
+                task_id: semantic_id,
                 limit,
                 model: params.model,
             })?;
             results.extend(related.results.into_iter().map(semantic_hit_to_global));
             return Ok(GlobalSearchResponse {
-                mode: GlobalSearchMode::Related,
+                mode: GlobalSearchMode::Neighbor,
                 kind: params.kind,
                 results,
                 notes,
@@ -178,21 +179,21 @@ impl OrbitRuntime {
             .ok_or_else(|| {
                 OrbitError::InvalidInput("search query must not be empty".to_string())
             })?;
-        let mode = if params.semantic {
-            GlobalSearchMode::Semantic
+        let mode = if params.hybrid {
+            GlobalSearchMode::Hybrid
         } else {
             GlobalSearchMode::Lexical
         };
 
-        if params.semantic && !matches!(params.kind, GlobalSearchKind::Task) {
+        if params.hybrid && !matches!(params.kind, GlobalSearchKind::Task) {
             notes.push(
-                "semantic vector search currently runs against tasks only; docs, learnings, and ADRs use lexical matching"
+                "hybrid vector search currently runs against tasks only; docs, learnings, and ADRs use lexical matching"
                     .to_string(),
             );
         }
 
         if params.kind.includes_tasks() {
-            if params.semantic {
+            if params.hybrid {
                 let search = self.semantic_search(SemanticSearchParams {
                     query: query.to_string(),
                     limit,
@@ -305,5 +306,28 @@ fn semantic_hit_to_global(hit: orbit_search::SemanticHit) -> GlobalSearchHit {
         snippet: Some(hit.snippet),
         score: Some(hit.score),
         matched_by: None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use serde_json::json;
+
+    use super::*;
+
+    #[test]
+    fn search_modes_serialize_with_public_flag_names() {
+        assert_eq!(
+            serde_json::to_value(GlobalSearchMode::Lexical).expect("serialize mode"),
+            json!("lexical")
+        );
+        assert_eq!(
+            serde_json::to_value(GlobalSearchMode::Hybrid).expect("serialize mode"),
+            json!("hybrid")
+        );
+        assert_eq!(
+            serde_json::to_value(GlobalSearchMode::Neighbor).expect("serialize mode"),
+            json!("neighbor")
+        );
     }
 }

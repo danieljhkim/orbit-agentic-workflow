@@ -60,7 +60,7 @@ fn direct_search_semantic_command_surfaces_companion_stderr() {
     let output = run_orbit(
         &workspace.work,
         &workspace.home,
-        &["search", "anything", "--semantic", "--kind", "task"],
+        &["search", "anything", "--hybrid", "--kind", "task"],
         Some(&workspace.companion),
     );
 

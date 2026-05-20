@@ -10,14 +10,14 @@ impl Tool for OrbitSearchTool {
         let mut parameters = vec![
             ToolParam {
                 name: "query".to_string(),
-                description:
-                    "Free-text query. Defaults to lexical matching unless semantic is true."
-                        .to_string(),
+                description: "Free-text query. Defaults to lexical matching unless hybrid is true."
+                    .to_string(),
                 param_type: "string".to_string(),
                 required: false,
             },
             ToolParam {
-                name: "semantic".to_string(),
+                // ADR-0175: expose the free-text vector ranker as hybrid, not semantic.
+                name: "hybrid".to_string(),
                 description:
                     "Opt into hybrid BM25 + cosine ranking for task vectors; other kinds remain lexical."
                         .to_string(),
@@ -25,9 +25,10 @@ impl Tool for OrbitSearchTool {
                 required: false,
             },
             ToolParam {
-                name: "related".to_string(),
+                // ADR-0175: semantic carries the task ID for cosine-neighbor lookup.
+                name: "semantic".to_string(),
                 description:
-                    "Task ID for cosine-neighbor lookup. Mutually exclusive with query and implies semantic mode."
+                    "Task ID for cosine-neighbor lookup. Mutually exclusive with query."
                         .to_string(),
                 param_type: "string".to_string(),
                 required: false,
@@ -73,5 +74,24 @@ impl Tool for OrbitSearchTool {
 
     fn execute(&self, ctx: &ToolContext, input: Value) -> Result<Value, OrbitError> {
         super::execute_host_action(ctx, input, OrbitBuiltinAction::Search)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn search_schema_uses_hybrid_and_semantic_task_id_params() {
+        let schema = OrbitSearchTool.schema();
+        let params = schema
+            .parameters
+            .iter()
+            .map(|param| (param.name.as_str(), param.param_type.as_str()))
+            .collect::<Vec<_>>();
+
+        assert!(params.contains(&("hybrid", "boolean")));
+        assert!(params.contains(&("semantic", "string")));
+        assert!(!params.iter().any(|(name, _)| *name == "related"));
     }
 }

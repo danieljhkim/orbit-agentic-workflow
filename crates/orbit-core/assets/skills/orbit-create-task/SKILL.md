@@ -21,7 +21,7 @@ See the `orbit` skill for the full mapping rule and surface coverage. Examples b
 ## Workflow
 
 1. Confirm objective, constraints, and done criteria.
-2. Inspect codebase context before creating the task. If you want background on prior related work, `orbit.search` is available; use `semantic: true` with `kind: "task"` when the proposed work might overlap with a task whose title uses different vocabulary. Optional, not required. See `orbit-search`.
+2. Inspect codebase context before creating the task. If you want background on prior related work, `orbit.search` is available; use `hybrid: true` with `kind: "task"` when the proposed work might overlap with a task whose title uses different vocabulary. Optional, not required. See `orbit-search`.
 3. Write clear acceptance criteria that define observable success.
 4. Choose task metadata while the scope is fresh: set `complexity` to `low`, `medium`, or `hard` whenever you can make a reasonable call. Leave it unset only when the current context is too thin to classify.
 5. Add assumptions, risks, and rollback notes to the description when they matter.

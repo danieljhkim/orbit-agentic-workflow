@@ -27,19 +27,19 @@ orbit search "slow inference after model swap" --limit 5
 orbit tool run orbit.search --input '{"query":"slow inference after model swap","limit":5,"model":"<agent-family>"}'
 
 # Hybrid BM25 + cosine over task fields; other kinds remain lexical
-orbit search "agent loop deadlock" --semantic --kind task --limit 5
-orbit tool run orbit.search --input '{"query":"agent loop deadlock","semantic":true,"kind":"task","limit":5,"model":"<agent-family>"}'
+orbit search "agent loop deadlock" --hybrid --kind task --limit 5
+orbit tool run orbit.search --input '{"query":"agent loop deadlock","hybrid":true,"kind":"task","limit":5,"model":"<agent-family>"}'
 
 # Cosine neighbors of a known task
-orbit search --related "<task-id>" --limit 5
-orbit tool run orbit.search --input '{"related":"<task-id>","limit":5,"model":"<agent-family>"}'
+orbit search --semantic "<task-id>" --limit 5
+orbit tool run orbit.search --input '{"semantic":"<task-id>","limit":5,"model":"<agent-family>"}'
 ```
 
-`--related <id>` is mutually exclusive with a positional query and implies semantic mode. It requires task vectors and therefore requires the companion.
+`--semantic <id>` is mutually exclusive with a positional query and uses task vectors, so it requires the companion.
 
 ## Index Coverage
 
-Lexical search covers tasks, docs, learnings, and ADRs. Vector search currently covers task fields only. When `--semantic` is set for `--kind doc`, `--kind learning`, `--kind adr`, or those portions of `--kind all`, Orbit still uses lexical matching for those kinds.
+Lexical search covers tasks, docs, learnings, and ADRs. Vector search currently covers task fields only. When `--hybrid` is set for `--kind doc`, `--kind learning`, `--kind adr`, or those portions of `--kind all`, Orbit still uses lexical matching for those kinds.
 
 The help text for `orbit search --help` carries this asymmetry because it is user-visible behavior, not an implementation accident.
 
@@ -47,8 +47,8 @@ The help text for `orbit search --help` carries this asymmetry because it is use
 
 Three patterns cover almost every call:
 
-1. **Pre-create context check.** Before adding a new task, query the proposed title or description to find related prior work. Use `--semantic --kind task` when vocabulary mismatch is likely; use plain lexical search when looking for exact names, errors, or paths.
-2. **Pre-execute related lookup.** After `orbit.task.show` loads a task, call `orbit.search` with `related` on that task ID to surface prior tasks the original author may not have linked in `context_files`. Skim the top 3-5; ignore irrelevant hits.
+1. **Pre-create context check.** Before adding a new task, query the proposed title or description to find related prior work. Use `--hybrid --kind task` when vocabulary mismatch is likely; use plain lexical search when looking for exact names, errors, or paths.
+2. **Pre-execute related lookup.** After `orbit.task.show` loads a task, call `orbit.search` with `semantic` set to that task ID to surface prior tasks the original author may not have linked in `context_files`. Skim the top 3-5; ignore irrelevant hits.
 3. **Ad-hoc project search.** "Where did we decide X?" or "didn't we have a doc about Y?" starts with `orbit search "X" --kind all`.
 
 ## Stop Rule
@@ -83,7 +83,7 @@ Treat scores as relative ordering signals, not absolute confidence thresholds. S
 | Calling lifecycle commands to search | `orbit semantic` manages the companion | Use `orbit search` or `orbit.search` |
 | Aborting when the companion is not installed | Embeddings are optional infrastructure | Fall back to lexical search unless the user opted in |
 | Using semantic search for exact identifiers | Lexical matching is cheaper and more predictable for names, paths, and error strings | Use plain `orbit search` or `orbit.graph.search` |
-| Calling `--related` on a brand-new task before indexing completes | New tasks may not have embeddings yet | Search the task title/description with `--semantic --kind task` |
+| Calling `--semantic <id>` on a brand-new task before indexing completes | New tasks may not have embeddings yet | Search the task title/description with `--hybrid --kind task` |
 
 ## Cross-References
 
