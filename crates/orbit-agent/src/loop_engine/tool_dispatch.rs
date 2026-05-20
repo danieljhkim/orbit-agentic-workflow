@@ -272,9 +272,11 @@ mod tests {
 
     #[test]
     fn build_tool_specs_expands_wildcards_to_registered_tools_only() {
+        // ORB-00202: `orbit.task.search` was hard-removed in phase 2, so it
+        // is the natural "known-unregistered" name to assert the wildcard
+        // skips. No prior `unregister` call is needed.
         let mut registry = ToolRegistry::new();
         registry.register_builtins();
-        assert!(registry.unregister("orbit.task.search"));
 
         let specs = build_tool_specs(&registry, &["orbit.task.*".to_string()]);
         let names = specs.into_iter().map(|spec| spec.name).collect::<Vec<_>>();

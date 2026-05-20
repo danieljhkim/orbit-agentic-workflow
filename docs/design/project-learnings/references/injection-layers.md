@@ -46,7 +46,7 @@ L2 lives in `orbit-mcp` because:
 
 - Session dedup needs session state. MCP has sessions; the tool layer does not. Pushing dedup down requires threading a session ID through every tool call.
 - Caps and admission policy are consumer-shape concerns. Different consumers (MCP, CLI, future REST adapter) tolerate different volumes of injected context.
-- ARCHITECTURE.md forbids `orbit-mcp → orbit-store`, so L2 re-enters the tool surface via `McpHost::call_tool("orbit.learning.search", …)`. The tool layer is the *callee*, not the *home*, of the sidecar.
+- ARCHITECTURE.md forbids `orbit-mcp → orbit-store`, so L2 re-enters the tool surface via `McpHost::call_tool("orbit.search", …)` with a `{"kind": "learning"}` body. The tool layer is the *callee*, not the *home*, of the sidecar.
 
 If a future adapter (REST, gRPC, …) needs its own sidecar, the right move is **another L2-shaped layer in that adapter**, not pulling the existing one down into `orbit-tools`.
 

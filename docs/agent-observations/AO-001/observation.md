@@ -9,6 +9,8 @@ tags: [tool-surface, mcp, cli, model-family, codex, learnings]
 
 # Tool surface preference splits by model family
 
+*Editorial note: References below to the unified search surface with `kind=learning` reflect a mechanical rewrite. The original observation referred to the phase-1 per-domain tool (retired by [ORB-00202] in favor of unified `orbit.search` with `kind: "learning"`). Body text otherwise preserves the original analysis.*
+
 **Window:** 2026-05-15 → 2026-05-18 (3 days)
 **Source:** `orbit audit list --since 30d` — db was reset ~3 days prior, so the 30d query returned 3d
 **Role normalization:** raw audit rows contain many self-identifications (`gpt-5`, `gpt-5-codex`, `gpt-5.5`, `grok-build`, `grok-4`, `claude-opus-4-7`, `pro`, etc.). These were consolidated into the four canonical agent families — **codex, claude, grok, gemini** — plus **agent** (orchestrator) and **admin** (human/admin CLI). The inconsistent self-identification is itself a finding; see §Self-identification below.
@@ -30,7 +32,7 @@ Tool-call events only (`subcommand == "run"` → CLI, `subcommand == "run-mcp"` 
 | claude | 466 | 322 | 144 | 69 |
 | gemini | 138 | 98 | 40 | 71 |
 
-`agent` (91% MCP) is mostly claude under a generic role tag — events emitted through code paths that don't pass through a model identifier (notably the preToolUse hook firing `orbit.learning.search`, which accounts for ~530 of the 749 MCP calls in that row). If the `agent` events were merged into claude, claude's MCP% would jump from 69% to ~83% and the sample would roughly double; the codex/claude gap widens accordingly. Left unmerged in the data to keep the role boundary visible. `admin` is human-invoked CLI by definition, so 0% MCP is expected.
+`agent` (91% MCP) is mostly claude under a generic role tag — events emitted through code paths that don't pass through a model identifier (notably the preToolUse hook firing `orbit.search` (kind=learning), which accounts for ~530 of the 749 MCP calls in that row). If the `agent` events were merged into claude, claude's MCP% would jump from 69% to ~83% and the sample would roughly double; the codex/claude gap widens accordingly. Left unmerged in the data to keep the role boundary visible. `admin` is human-invoked CLI by definition, so 0% MCP is expected.
 
 The three named model rows (claude, grok, gemini) cluster tightly at 69–74% MCP. Codex sits at 8%. The gap is the finding.
 
@@ -49,7 +51,7 @@ For tools with full CLI/MCP parity, codex still picks CLI for the same operation
 
 Codex's MCP usage of `orbit.task.update` (43 MCP, 123 CLI) is the key counter-evidence to "codex never uses MCP." It proves codex *can* and *does* reach for MCP — it just defaults to CLI even when MCP is wired and identical.
 
-## Knock-on effect: `orbit.learning.search`
+## Knock-on effect: `orbit.search` (kind=learning)
 
 | role | mcp | cli |
 |---|---:|---:|
@@ -58,7 +60,7 @@ Codex's MCP usage of `orbit.task.update` (43 MCP, 123 CLI) is the key counter-ev
 | claude | 42 | 0 |
 | codex | **0** | **0** |
 
-Codex never calls `orbit.learning.search` — not via CLI either. The cause is *not* a coverage gap. Learnings get surfaced to agents via two reminder paths:
+Codex never calls `orbit.search` (kind=learning) — not via CLI either. The cause is *not* a coverage gap. Learnings get surfaced to agents via two reminder paths:
 
 1. Claude's `preToolUse` hook
 2. The MCP server's learning sidecar

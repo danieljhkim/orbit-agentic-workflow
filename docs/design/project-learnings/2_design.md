@@ -39,7 +39,7 @@ orbit-store/
 
 The third push layer — a Claude Code `PreToolUse` hook on `Edit | Write | Read` — is not part of any Orbit crate; it ships as a hook configuration in [.claude/settings.json](../../../.claude/settings.json) (or whichever scope is appropriate; see [§4.3](#43-layer-3-claude-code-pretooluse-hook-optional)).
 
-No cross-crate dependencies that violate the architecture diagram in [CLAUDE.md](../../../CLAUDE.md) are introduced. The dependency edges added are `orbit-store` (extended internally), `orbit-tools → orbit-store` (already present), and `orbit-engine → orbit-store` (already present). `orbit-mcp` remains a transport adapter that depends only on `orbit-common`; Layer 2 asks the injected host to run `orbit.learning.search` instead of reading the learning store directly.
+No cross-crate dependencies that violate the architecture diagram in [CLAUDE.md](../../../CLAUDE.md) are introduced. The dependency edges added are `orbit-store` (extended internally), `orbit-tools → orbit-store` (already present), and `orbit-engine → orbit-store` (already present). `orbit-mcp` remains a transport adapter that depends only on `orbit-common`; Layer 2 asks the injected host to run `orbit.search` (with `kind: "learning"`) instead of reading the learning store directly.
 
 ---
 
@@ -146,7 +146,7 @@ Glob syntax: standard `**`/`*`/`?` semantics (the same matcher `orbit-policy` us
 Free-form string labels. Matched against:
 
 - Tags on the task itself (when in the engine pre-prompt path).
-- Tags supplied by the caller in an explicit `orbit.learning.search --tag` query.
+- Tags supplied by the caller in an explicit `orbit learning list --tag` query (structural filter; post-[ORB-00202]).
 
 Tags are not auto-derived from anything in phase 1. They exist for the cases where path-based scoping doesn't fit ("when running any benchmark", "when authoring docs").
 
@@ -170,7 +170,7 @@ Three layers, from coarsest to finest. Each layer adds precision on top of the l
 
 1. Reads the task's `context_files`.
 2. Reads the task's `tags` (if any).
-3. Queries `orbit.learning.search` with the union of (paths from `context_files`) and (tags from the task).
+3. Queries the runtime-side `search_learnings` helper (equivalent to `orbit.search` with `kind: "learning"`) with the union of (paths from `context_files`) and (tags from the task).
 4. Takes the top-K (default 5) results.
 5. Prepends a `<system-reminder>` block to the agent prompt:
 
@@ -214,7 +214,7 @@ This layer covers any agent that talks to Orbit's MCP server. It does not cover 
 
 ### 4.3 Layer 3 — Claude Code `PreToolUse` hook (optional)
 
-A `PreToolUse` hook in [.claude/settings.json](../../../.claude/settings.json) intercepts `Edit | Write | Read`, extracts the target path from the tool input, calls `orbit learning search --path <path>`, and emits a `<system-reminder>` with the matching learnings before the tool runs.
+A `PreToolUse` hook in [.claude/settings.json](../../../.claude/settings.json) intercepts `Edit | Write | Read`, extracts the target path from the tool input, calls `orbit learning list --path <path>` (post-[ORB-00202] glob-containment semantics), and emits a `<system-reminder>` with the matching learnings before the tool runs.
 
 This is the only layer that surfaces learnings on Claude Code's built-in editor tools, which agents use far more than they call MCP file tools. It's the most precise layer (per-edit, per-target) but the least universal (Claude Code only).
 
@@ -246,31 +246,33 @@ If an agent decides a summary is relevant, it pulls the body explicitly. This se
 
 ```
 orbit learning add --summary <text> --scope paths=... [tags=...] [--body-file FILE] [--evidence task=T... commit=SHA ...]
-orbit learning list [--status active|superseded] [--tag TAG] [--path GLOB]
-orbit learning search [--path PATH] [--tag TAG] [--query TEXT] [--limit N]
+orbit learning list [--status active|superseded] [--tag TAG] [--path GLOB]  # --path uses glob-containment
 orbit learning show <id>
 orbit learning update <id> [--summary ...] [--body-file ...] [--scope ...]
 orbit learning supersede <id> --with <new-id>
 orbit learning upvote --id <id> --model <agent-family> --task <task-id>
 orbit learning reindex                    # rebuild SQLite index from YAML
 orbit learning prune [--stale-only]       # report or delete stale learnings
+
+# Free-text content match (formerly the per-domain `learning` subcommand of `orbit search`) lives on the unified search surface:
+orbit search --kind learning <text> [--tag T] [--path P] [--all] [--status SET] [--limit N]
 ```
 
-`add`, `update`, and `supersede` write the YAML and update the index atomically. `upvote` appends to the learning's `votes.jsonl` sidecar and is idempotent for `(learning_id, voter_model, task_id)`. `search` is the fast read path used by all three injection layers.
+`add`, `update`, and `supersede` write the YAML and update the index atomically. `upvote` appends to the learning's `votes.jsonl` sidecar and is idempotent for `(learning_id, voter_model, task_id)`. `orbit learning list --path/--tag` and `orbit search --kind learning` are the fast read paths used by the injection layers (the runtime-side `search_learnings` helper is the in-process equivalent).
 
 ### 5.2 MCP tools
 
 | Tool | Inputs | Outputs |
 |------|--------|---------|
 | `orbit.learning.add` | `summary`, `scope`, `body?`, `evidence?` | `{ id, created_at }` |
-| `orbit.learning.list` | `status?`, `tag?`, `path?` | `{ learnings: [...] }` |
-| `orbit.learning.search` | `path?`, `tag?`, `query?`, `limit?` | ranked list |
+| `orbit.learning.list` | `status?`, `tag?`, `path?` (glob-containment) | `{ learnings: [...] }` |
+| `orbit.search` (`kind: "learning"`) | `query?`, `tag?`, `path?`, `limit?`, `all?`, `status?` | ranked list with `kind: "learning"` hits |
 | `orbit.learning.show` | `id` | full record plus vote summary |
 | `orbit.learning.update` | `id`, fields | updated record |
 | `orbit.learning.supersede` | `id`, `with` | both records updated |
 | `orbit.learning.upvote` | `id`, `model`, `task?` | vote summary |
 
-`orbit.learning.search` is the only tool on the hot path (called from injection layers); it must stay sub-10ms at expected scale.
+`orbit.learning.list` and the runtime-side `search_learnings` helper drive the injection-layer hot path; both must stay sub-10ms at expected scale. The standalone per-domain learning-search MCP tool (phase-1 surface) was retired by [ORB-00202] in favor of `orbit.search` with `kind: "learning"`.
 
 ### 5.3 Result shape
 
@@ -305,7 +307,7 @@ When an agent finds an existing learning that covers a duplicate concern, it rec
 
 Rows append to `.orbit/learnings/<id>/votes.jsonl` using `O_APPEND`; each learning has its own file and lock, so cross-learning contention is zero. V1 rejects free-floating votes without `task_id` to keep the signal anchored to a concrete work context. Duplicate rows with the same `(learning_id, voter_model, task_id)` are treated as one vote, preserving the earliest timestamp for that key.
 
-`orbit.learning.show` reports derived vote fields: `vote_count` and `last_voted_at`. `orbit.learning.list` and `orbit.learning.search` keep their envelope output shape unchanged.
+`orbit.learning.show` reports derived vote fields: `vote_count` and `last_voted_at`. `orbit.learning.list` and `orbit.search` (with `kind: "learning"`) keep their envelope output shape unchanged.
 
 Search ranking remains scope-filtered first. Within the matched set, rows sort by:
 
@@ -322,13 +324,13 @@ Search ranking remains scope-filtered first. Within the matched set, rows sort b
 
 ### 6.1 `orbit-learnings` skill
 
-A skill at `.claude/skills/orbit-learnings/` (and the equivalent location for other agent vendors) exists for the active-query path. Trigger phrases include "what should I know about", "are there learnings for", "is there context I'm missing on". The skill body documents how to call `orbit.learning.search` and how to interpret results.
+A skill at `.claude/skills/orbit-learnings/` (and the equivalent location for other agent vendors) exists for the active-query path. Trigger phrases include "what should I know about", "are there learnings for", "is there context I'm missing on". The skill body documents how to call `orbit.search` (with `kind: "learning"`) and how to interpret results.
 
 The skill is the pull complement to push. Push handles the "agent doesn't know it should look" failure mode; the skill handles the "agent has time to ask" case (e.g., at task start, when reviewing an unfamiliar area).
 
 ### 6.2 Direct tool use
 
-Agents that don't load skills can call `orbit.learning.search` directly via MCP. The tool's input schema is documented; its output shape matches §5.3.
+Agents that don't load skills can call `orbit.search` (with `kind: "learning"`) directly via MCP. The tool's input schema is documented; its output shape matches §5.3.
 
 ### 6.3 Dashboard
 

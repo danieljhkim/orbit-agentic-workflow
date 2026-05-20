@@ -155,8 +155,8 @@ mod tests {
     async fn call_tool_wraps_affected_array_results_for_strict_mcp_clients() {
         let affected_tools = [
             "orbit.task.list",
-            "orbit.task.search",
             "orbit.task.review_thread.list",
+            "orbit.learning.list",
         ];
         let host = Arc::new(EchoArrayHost {
             schemas: affected_tools

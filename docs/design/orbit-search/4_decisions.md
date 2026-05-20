@@ -233,6 +233,25 @@ Compare to the analogous knowledge-graph crate: `orbit-knowledge` owns its data 
 
 ---
 
+## ADR-0176 — Consolidate per-domain search; cross-kind `--path` and `--tag` filters; learning list `--path` semantics flip
+
+**Status:** Proposed · 2026-05-20 · [ORB-00202]
+
+**Context.** After [ADR-0174] and [ADR-0175] consolidated `orbit search` as the unified query surface, the per-domain `task`, `docs`, and `learning` `search` subcommands of `orbit` became redundant for content-similarity queries. The `learning` variant in particular bundled three unrelated operations under one verb: substring search (content), path-glob applicability lookup (structural), and tag filter (structural). Agents pre-edit also need a single cross-kind command that answers *"given this file path, what tasks / learnings / ADRs apply here?"* — the context-pack query.
+
+**Decision.** Hard-remove the per-domain `task`, `docs`, and `learning` `search` subcommands of `orbit` (CLI + MCP). Re-home their filters under universal flags on `orbit search`: `--tag <T>` (AND semantics, repeatable, case-insensitive), `--all` (kind-aware status widener), `--status <comma-set>` (explicit per-kind override), and `--path <P>` (cross-kind applicability filter — selector-mapping for tasks, glob-containment for learnings, deferred to phase 3 for ADRs, out of scope for docs). Add `orbit task list --path`; flip `orbit learning list --path` from exact-match to glob-containment. The old `--include-superseded` mental model from the retired per-domain doc surface is replaced by `orbit search --kind adr --all`. The structural-vs-content split — `search` for indexed content, `list` for structural filters — is enforced by the flag layout.
+
+**Consequences.**
+- One mental model: `orbit search` queries indexed content, `orbit <kind> list` filters structural metadata.
+- The agent context-pack query collapses to a single command (`orbit search --path <file> --kind all`).
+- Universal `--all` / `--status` vocabulary replaces the patchwork of kind-specific flags (`--include-superseded`).
+- Phase-3 (ORB-00203) gets a clean specification: `--path X --kind adr` and `--tag X --kind adr` already exist as no-op branches; phase 3 fills them in by adding ADR frontmatter fields, without changing the public surface.
+- Cost: the `learning list --path` semantics flip is the only observable behavior change. Scripts calling `orbit learning list --path 'src/auth/**'` expecting exact-match scoped lookups will now also see paths *inside* that glob. The migration target for ex-`learning search --path` callers is unchanged because the new semantics match what that deleted command already did.
+- Cost: ADR carries `--tag` and `--path` no-ops in two flag positions, documented in `--help`, until phase 3 lights them up.
+- Cost: `AdrStatus` has no `Deprecated` variant, so `--all` adds `Superseded` only on ADRs. Asymmetric with task widening (which gets multiple terminal states); revisited if a deprecated state ever becomes load-bearing.
+
+---
+
 ## Task References
 
 - [T20260510-3] — Design semantic search over task artifacts and graph (v2). The task that produced this folder.
@@ -241,5 +260,6 @@ Compare to the analogous knowledge-graph crate: `orbit-knowledge` owns its data 
 - [T20260510-26] — Make semantic companion install/update quiet and version-aware. The task that accepted and implemented ADR-008.
 - [ORB-00196] — Split `orbit semantic` lifecycle from the unified `orbit search` query surface. The task that accepted and implemented ADR-0174.
 - [ORB-00204] — Rename `orbit search` flags to `--hybrid` for free-text vector ranking and `--semantic <id>` for task-neighbor lookup. The task that accepted and implemented ADR-0175.
+- [ORB-00202] — Consolidate per-domain search subcommands and add cross-kind `--path` / `--tag` filters. The task that proposed and implemented ADR-0176.
 
 Resolve any task above with `orbit task show <ID>` or `git log --grep=<ID>`.

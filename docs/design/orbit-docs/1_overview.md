@@ -1,7 +1,7 @@
 ---
 title: "Orbit Docs — Overview"
 owner: claude
-last_updated: 2026-05-19
+last_updated: 2026-05-20
 status: Draft
 feature: orbit-docs
 doc_role: overview
@@ -16,7 +16,7 @@ related_artifacts: [ORB-00163, ADR-0169, ADR-0170, ADR-0171]
 
 Orbit Docs is the human-authored knowledge corpus for an Orbit workspace. It indexes the Markdown a team writes for itself — design narratives, reusable code patterns, runbooks, glossaries — and exposes a single retrieval surface (`orbit.docs.*`) that agents can query at task time, at hook time, or interactively. It deliberately does not own the corpus's storage shape: docs are PR-reviewed files under a configurable `docs/` root, and Orbit's only on-disk artifact is the `[docs].roots` entry in `.orbit/config.toml`.
 
-The system is **pull-first**: agents call `orbit docs search` or `orbit docs show` when they need context. Push-style injection (PreToolUse hook surfaces, `task show --with-context`) is a downstream feature, designed but not yet wired ([ORB-00166], [ORB-00167]).
+The system is **pull-first**: agents call `orbit search --kind doc` (or `--kind all` for federated doc+ADR) or `orbit docs show` when they need context. Push-style injection (PreToolUse hook surfaces, `task show --with-context`) is a downstream feature, designed but not yet wired ([ORB-00166], [ORB-00167]).
 
 Phase 1 ships the corpus, the locked frontmatter schema, the six-verb surface, the `orbit-docs` skill, and a one-shot migrator that backfills legacy `docs/design/<feature>/` and `docs/design-patterns/` files. [2_design.md](./2_design.md) specifies the schema, walker, surface, and tolerant indexer; [3_vision.md](./3_vision.md) names open questions and the v2 roadmap (semantic ranking, ADR folding, hook integration); [4_decisions.md](./4_decisions.md) is the ADR log.
 
@@ -73,7 +73,7 @@ Strict parsing still applies if you opt in via the `migrate` verb or by writing 
 |------|---------|
 | `orbit docs list` | Walk configured roots; return all records (with optional `--type` and `--tag` filters). |
 | `orbit docs show <path>` | Render one doc with parsed frontmatter and body. |
-| `orbit docs search <query>` | Ranked matches against `summary`, `tags`, and `type`. Substring + tag-exact + type-exact scoring; semantic ranking deferred to v2 ([ORB-00168]). |
+| `orbit search --kind doc <query>` | Ranked matches against `summary`, `tags`, and `type`. Substring + tag-exact + type-exact scoring; semantic ranking deferred to v2 ([ORB-00168]). |
 | `orbit docs add <path>` | Append `<path>` to `[docs].roots`. Idempotent. Refuses `.orbit/` paths and non-existent paths. |
 | `orbit docs reindex` | v1 no-op for forward compatibility; the walker is on-demand. Slot reserved for the v2 embeddings index. |
 | `orbit docs migrate [--dry-run]` | One-shot frontmatter backfill for legacy `docs/design/<feature>/*.md` and `docs/design-patterns/*.md`. Idempotent. Never touches `.orbit/`. |

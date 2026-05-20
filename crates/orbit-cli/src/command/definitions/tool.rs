@@ -351,7 +351,6 @@ fn should_project_minimal_task_output(tool_name: &str, input: &Value) -> bool {
     if !matches!(
         tool_name,
         "orbit.task.list"
-            | "orbit.task.search"
             | "orbit.task.show"
             | "orbit.task.add"
             | "orbit.task.artifact.put"
@@ -374,13 +373,13 @@ mod tests {
     use super::*;
 
     #[test]
-    fn search_output_uses_minimal_task_projection() {
+    fn list_output_uses_minimal_task_projection() {
         let shaped = shape_tool_output(
-            "orbit.task.search",
-            &json!({ "query": "search" }),
+            "orbit.task.list",
+            &json!({ "status": "backlog" }),
             json!([{
                 "id": "T20260422-0001",
-                "title": "Search tasks",
+                "title": "Backlog task",
                 "status": "backlog",
                 "priority": "medium",
                 "type": "feature",
@@ -399,7 +398,7 @@ mod tests {
             shaped,
             json!([{
                 "id": "T20260422-0001",
-                "title": "Search tasks",
+                "title": "Backlog task",
                 "status": "backlog",
                 "priority": "medium",
                 "type": "feature",

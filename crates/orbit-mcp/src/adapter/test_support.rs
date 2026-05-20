@@ -89,7 +89,7 @@ impl crate::McpHost for LearningSidecarHost {
             tool_schema("orbit.graph.show"),
             tool_schema("orbit.graph.refs"),
             tool_schema("orbit.task.show"),
-            tool_schema("orbit.learning.search"),
+            tool_schema("orbit.learning.list"),
         ]
     }
 
@@ -98,7 +98,7 @@ impl crate::McpHost for LearningSidecarHost {
             .lock()
             .expect("calls lock")
             .push(name.to_string());
-        if name == "orbit.learning.search" {
+        if name == "orbit.learning.list" {
             let path = input
                 .get("path")
                 .and_then(Value::as_str)

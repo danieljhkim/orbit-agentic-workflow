@@ -116,7 +116,6 @@ impl Execute for SearchCommand {
             path: self.path,
         })?;
 
-
         if self.json {
             crate::output::json::print_pretty(&serde_json::json!(response))
         } else {

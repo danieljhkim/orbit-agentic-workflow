@@ -4,6 +4,12 @@
 
 ### Breaking Changes
 
+- **Per-domain `search` subcommands removed; cross-kind filters on `orbit search`**: `orbit task search`, `orbit docs search`, `orbit learning search` (and the matching `orbit.task.search`, `orbit.docs.search`, `orbit.learning.search` MCP tools) are hard-removed. Replacement: `orbit search --kind {task,doc,learning,adr,all} <query>` for content-similarity, and `orbit <kind> list --filter` for structural filters. `orbit search` gains four new flags:
+  - `--tag <T>` (repeatable, AND semantics; applies to task/doc/learning; ADR returns empty until phase 3).
+  - `--all` — kind-aware status widener (task: adds `done,rejected,archived`; learning + adr: adds `superseded`; doc: no-op).
+  - `--status <comma-set>` — explicit per-kind override.
+  - `--path <P>` — cross-kind applicability filter (task: selector-mapping over `context_files`; learning: glob-containment over `scope.paths`; ADR/doc no-op until phase 3).
+  The old `--include-superseded` mental model is covered by `orbit search --kind adr --all`. `orbit task list` and `orbit.task.list` gain a new `--path` parameter (selector-mapping). **Behavior change** (called out): `orbit learning list --path` flips from exact-match to glob-containment — a learning with `scope.paths: ['src/auth/**']` now returns on `--path src/auth/login.rs` (previously returned only on exact `src/auth/**` match). Audit event names `orbit.task.search` / `orbit.docs.search` / `orbit.learning.search` are orphaned by the no-shim deletion. ([ORB-00202])
 - **`orbit search` flag rename**: free-text vector ranking is now `--hybrid` / `hybrid: true`; task-neighbor lookup is now `--semantic <id>` / `semantic: "<id>"`. The old `--semantic` boolean and `--related <id>` surfaces are hard-removed; JSON mode values are now `hybrid` and `neighbor`. Historical phase-1 audit payloads carrying `semantic: true` are orphaned by the no-shim rename. ([ORB-00204])
 - **Design-doc decay-check surface removed**: `orbit design check`, `orbit.design.check` MCP tool, the wrapper script, and `make check-design-docs` are gone. Use `orbit design init/list/show` + same-PR update rule. ([ORB-00112])
 - **Search namespace split**: `orbit.semantic.search`, `orbit.semantic.related`, and the `orbit-semantic` skill are removed in favor of `orbit.search` and `orbit-search`; `orbit semantic reindex` is now `orbit semantic index`. Historical `semantic.search` / `semantic.related` audit event names are orphaned by this hard break because there are no external audit-history consumers yet. ([ORB-00196])
