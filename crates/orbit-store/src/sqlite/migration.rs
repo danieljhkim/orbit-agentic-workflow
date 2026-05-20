@@ -113,7 +113,7 @@ pub(crate) fn apply_schema(conn: &Connection) -> Result<(), OrbitError> {
             -- validation_warnings) are stored as JSON-encoded strings so filters
             -- can use `LIKE '%"<value>"%'` until the corpus warrants junction
             -- tables. Per ADR-010 in docs/design/adr-artifact, FTS5 over body
-            -- content is owned by `orbit-embed::vector`, not this schema.
+            -- content is owned by `orbit-search::vector`, not this schema.
             CREATE TABLE IF NOT EXISTS adrs (
                 id TEXT PRIMARY KEY,
                 status TEXT NOT NULL,

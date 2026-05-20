@@ -2114,10 +2114,10 @@ dependencies = [
  "jsonschema",
  "libc",
  "orbit-common",
- "orbit-embed",
  "orbit-engine",
  "orbit-knowledge",
  "orbit-policy",
+ "orbit-search",
  "orbit-store",
  "orbit-tools",
  "regex",
@@ -2148,31 +2148,6 @@ dependencies = [
  "tokio",
  "tower",
  "url",
-]
-
-[[package]]
-name = "orbit-embed"
-version = "0.6.0"
-dependencies = [
- "blake3",
- "chrono",
- "orbit-common",
- "reqwest",
- "rusqlite",
- "serde",
- "serde_json",
- "tempfile",
-]
-
-[[package]]
-name = "orbit-embed-companion"
-version = "0.6.0"
-dependencies = [
- "clap",
- "fastembed",
- "orbit-common",
- "orbit-embed",
- "serde_json",
 ]
 
 [[package]]
@@ -2271,6 +2246,31 @@ dependencies = [
  "git2",
  "orbit-common",
  "toml",
+]
+
+[[package]]
+name = "orbit-search"
+version = "0.6.0"
+dependencies = [
+ "blake3",
+ "chrono",
+ "orbit-common",
+ "reqwest",
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "tempfile",
+]
+
+[[package]]
+name = "orbit-search-companion"
+version = "0.6.0"
+dependencies = [
+ "clap",
+ "fastembed",
+ "orbit-common",
+ "orbit-search",
+ "serde_json",
 ]
 
 [[package]]

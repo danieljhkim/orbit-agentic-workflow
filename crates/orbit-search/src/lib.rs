@@ -8,7 +8,7 @@
     rustdoc::invalid_html_tags,
     rustdoc::private_intra_doc_links
 )]
-//! Slim embedding client surface for Orbit semantic indexing.
+//! Slim search client surface for Orbit semantic indexing.
 //!
 //! This crate intentionally contains no inference backend. The main `orbit`
 //! binary links this crate, locates the separately installed companion binary,
@@ -18,7 +18,7 @@
 //!
 //! - [`embedder`] — the [`Embedder`] trait + [`ModelSpec`] catalog. Read first
 //!   if you're integrating a new caller; everything else is downstream of this.
-//! - [`rpc`] — the JSON-Lines protocol shared with `orbit-embed-companion`.
+//! - [`rpc`] — the JSON-Lines protocol shared with `orbit-search-companion`.
 //! - [`companion`] — discovery of the installed companion binary.
 //! - [`noop`] — a deterministic test fake that needs no companion subprocess.
 //! - [`subprocess`] — the production [`Embedder`] impl that talks to the
@@ -29,6 +29,7 @@
 mod commands;
 mod companion;
 mod embedder;
+pub mod lexical;
 mod noop;
 mod rpc;
 mod subprocess;
@@ -45,6 +46,10 @@ pub use companion::{
     CompanionPaths, INSTALL_REMEDIATION, locate_companion, platform_companion_filename, platform_id,
 };
 pub use embedder::{DEFAULT_MODEL, Embedder, ModelSpec, default_model, supported_models};
+pub use lexical::docs::{
+    AdrSearchResult, AdrSearchSource, DocSearchResult, DocSearchSource, SearchResult,
+    score_adr_record, score_doc_record, sort_search_results,
+};
 pub use noop::NoopEmbedder;
 pub use rpc::{RpcError, RpcRequest, RpcResponse, RpcResult};
 pub use subprocess::SubprocessEmbedder;

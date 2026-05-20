@@ -27,7 +27,7 @@ Orbit tools are reachable via two surfaces. Both accept identical JSON arguments
 - Task lifecycle (`orbit.task.*`): both surfaces.
 - ADR artifacts (`orbit.adr.*`): both surfaces.
 - Graph read tools (`search`, `show`, `pack`, `callers`, `refs`, `implementors`, `deps`, `overview`, `history`): both surfaces.
-- Semantic read tools (`orbit.semantic.search`, `orbit.semantic.related`): both surfaces. Require the `orbit-embed-companion` binary (`orbit semantic install`); calls fail with an install-pointer error otherwise.
+- Semantic read tools (`orbit.semantic.search`, `orbit.semantic.related`): both surfaces. Require the `orbit-search-companion` binary (`orbit semantic install`); calls fail with an install-pointer error otherwise.
 - State handoff (`orbit.state.*`), graph writes, and duel/scoreboard tools: **CLI only** — used inside activity steps where the agent has shell access.
 
 **Always include `model` in the JSON** so Orbit can attribute the call to the right agent family. Here `model` means the canonical agent family: pass `codex`, `claude`, `gemini`, or `grok`. Full model strings are accepted and auto-normalized, but the family is the persisted identity.

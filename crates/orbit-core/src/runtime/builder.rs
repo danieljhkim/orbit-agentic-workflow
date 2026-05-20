@@ -1,8 +1,8 @@
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use orbit_embed::{EmbedWorker, VectorStore};
 use orbit_policy::PolicyEngine;
+use orbit_search::{EmbedWorker, VectorStore};
 use orbit_store::sqlite::task_registry::{
     BindWorkspaceParams, TaskRegistryStore, WorkspaceConfig, read_workspace_config_optional,
     task_registry_path, write_workspace_config,

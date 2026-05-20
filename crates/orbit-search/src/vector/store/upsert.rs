@@ -2,8 +2,8 @@
 //!
 //! `upsert_embeddings` is the canonical entry: it transactionally chunks each
 //! field's text, embeds the chunks, and writes the resulting rows into both
-//! `embeddings` (vector storage) and `tasks_fts` (FTS5 lexical mirror, when
-//! the source is a task). Unchanged fields short-circuit via `content_hash`.
+//! `embeddings` (vector storage) and `corpus_fts` (FTS5 lexical mirror).
+//! Unchanged fields short-circuit via `content_hash`.
 
 use std::collections::BTreeSet;
 
@@ -11,7 +11,7 @@ use chrono::Utc;
 use orbit_common::types::OrbitError;
 use rusqlite::{Connection, params};
 
-use super::{SOURCE_KIND_TASK, VectorStore};
+use super::VectorStore;
 use crate::Embedder;
 use crate::vector::chunker::chunk_text;
 use crate::vector::{EmbeddingField, UpsertReport, encode_f32_blob};
@@ -135,13 +135,11 @@ impl VectorStore {
                     ],
                 )
                 .map_err(|error| OrbitError::Store(error.to_string()))?;
-                if source_kind == SOURCE_KIND_TASK {
-                    tx.execute(
-                        "INSERT INTO tasks_fts(source_id, field, content) VALUES (?1, ?2, ?3)",
-                        params![source_id, field.field, chunk],
-                    )
-                    .map_err(|error| OrbitError::Store(error.to_string()))?;
-                }
+                tx.execute(
+                    "INSERT INTO corpus_fts(source_kind, source_id, field, content) VALUES (?1, ?2, ?3, ?4)",
+                    params![source_kind, source_id, field.field, chunk],
+                )
+                .map_err(|error| OrbitError::Store(error.to_string()))?;
                 report.embedded_chunks += 1;
             }
         }
@@ -200,13 +198,11 @@ pub(super) fn delete_field_rows(
         params![source_kind, source_id, field, model_id],
     )
     .map_err(|error| OrbitError::Store(error.to_string()))?;
-    if source_kind == SOURCE_KIND_TASK {
-        conn.execute(
-            "DELETE FROM tasks_fts WHERE source_id = ?1 AND field = ?2",
-            params![source_id, field],
-        )
-        .map_err(|error| OrbitError::Store(error.to_string()))?;
-    }
+    conn.execute(
+        "DELETE FROM corpus_fts WHERE source_kind = ?1 AND source_id = ?2 AND field = ?3",
+        params![source_kind, source_id, field],
+    )
+    .map_err(|error| OrbitError::Store(error.to_string()))?;
     Ok(())
 }
 
@@ -236,18 +232,20 @@ fn delete_unexpected_field_rows(
             stored_fields.insert(row.map_err(|error| OrbitError::Store(error.to_string()))?);
         }
     }
-    if source_kind == SOURCE_KIND_TASK {
+    {
         let mut stmt = conn
             .prepare(
                 r#"
                     SELECT DISTINCT field
-                    FROM tasks_fts
-                    WHERE source_id = ?1
+                    FROM corpus_fts
+                    WHERE source_kind = ?1 AND source_id = ?2
                 "#,
             )
             .map_err(|error| OrbitError::Store(error.to_string()))?;
         let rows = stmt
-            .query_map(params![source_id], |row| row.get::<_, String>(0))
+            .query_map(params![source_kind, source_id], |row| {
+                row.get::<_, String>(0)
+            })
             .map_err(|error| OrbitError::Store(error.to_string()))?;
         for row in rows {
             stored_fields.insert(row.map_err(|error| OrbitError::Store(error.to_string()))?);
@@ -276,13 +274,11 @@ fn delete_source_field_rows(
         params![source_kind, source_id, field],
     )
     .map_err(|error| OrbitError::Store(error.to_string()))?;
-    if source_kind == SOURCE_KIND_TASK {
-        conn.execute(
-            "DELETE FROM tasks_fts WHERE source_id = ?1 AND field = ?2",
-            params![source_id, field],
-        )
-        .map_err(|error| OrbitError::Store(error.to_string()))?;
-    }
+    conn.execute(
+        "DELETE FROM corpus_fts WHERE source_kind = ?1 AND source_id = ?2 AND field = ?3",
+        params![source_kind, source_id, field],
+    )
+    .map_err(|error| OrbitError::Store(error.to_string()))?;
     Ok(())
 }
 

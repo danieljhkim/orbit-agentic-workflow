@@ -65,7 +65,7 @@ impl SubprocessEmbedder {
             .spawn()
             .map_err(|error| {
                 OrbitError::Execution(format!(
-                    "failed to spawn embedding companion '{}': {error}",
+                    "failed to spawn search companion '{}': {error}",
                     path.display()
                 ))
             })?;
@@ -145,7 +145,7 @@ impl SubprocessEmbedder {
         })?;
         if read == 0 {
             return Err(OrbitError::AgentProtocolViolation(
-                "embedding companion exited before sending a response".to_string(),
+                "search companion exited before sending a response".to_string(),
             ));
         }
         let response: RpcResponse = serde_json::from_str(&response_line)
@@ -159,7 +159,7 @@ impl SubprocessEmbedder {
                 id: response_id,
                 error,
             } if response_id == id => Err(OrbitError::Execution(format!(
-                "embedding companion {}: {}",
+                "search companion {}: {}",
                 error.code, error.message
             ))),
             other => Err(OrbitError::AgentProtocolViolation(format!(

@@ -1,5 +1,5 @@
 //! JSON-Lines RPC envelope shared between the orbit binary and the
-//! `orbit-embed-companion` subprocess. The protocol is deliberately small:
+//! `orbit-search-companion` subprocess. The protocol is deliberately small:
 //! `info`, `embed`, `token_count`, `exit`. Both sides serialize via serde.
 
 use serde::{Deserialize, Serialize};

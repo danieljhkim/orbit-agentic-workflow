@@ -1,4 +1,5 @@
 use std::fs;
+use std::io::Write;
 use std::path::Path;
 use std::process::{Command, Stdio};
 
@@ -27,6 +28,7 @@ pub fn run(params: SemanticInstallParams) -> Result<SemanticInstallResult, Orbit
     let paths = CompanionPaths::default_under_home()?;
     fs::create_dir_all(&paths.bin_dir).map_err(|error| OrbitError::Io(error.to_string()))?;
     fs::create_dir_all(&paths.models_dir).map_err(|error| OrbitError::Io(error.to_string()))?;
+    emit_stale_companion_hint(&paths);
 
     let companion_path = paths.companion_path();
     let companion_changed = if params.force || companion_needs_install(&companion_path) {
@@ -71,7 +73,7 @@ fn install_companion(destination: &Path) -> Result<(), OrbitError> {
 }
 
 fn install_companion_to_temp(temp_path: &Path) -> Result<(), OrbitError> {
-    if let Ok(local_path) = std::env::var("ORBIT_EMBED_COMPANION")
+    if let Ok(local_path) = std::env::var("ORBIT_SEARCH_COMPANION")
         && Path::new(&local_path).is_file()
     {
         fs::copy(&local_path, temp_path).map_err(|error| OrbitError::Io(error.to_string()))?;
@@ -79,7 +81,7 @@ fn install_companion_to_temp(temp_path: &Path) -> Result<(), OrbitError> {
         return Ok(());
     }
 
-    let url = std::env::var("ORBIT_EMBED_COMPANION_URL").unwrap_or_else(|_| {
+    let url = std::env::var("ORBIT_SEARCH_COMPANION_URL").unwrap_or_else(|_| {
         format!(
             "{DEFAULT_RELEASE_BASE_URL}/{}",
             platform_companion_filename()
@@ -95,6 +97,26 @@ fn install_companion_to_temp(temp_path: &Path) -> Result<(), OrbitError> {
         })?;
     fs::write(temp_path, bytes).map_err(|error| OrbitError::Io(error.to_string()))?;
     make_executable(temp_path)
+}
+
+fn emit_stale_companion_hint(paths: &CompanionPaths) {
+    let stale_path = paths.bin_dir.join(legacy_platform_companion_filename());
+    if stale_path.exists() {
+        let _ = writeln!(
+            std::io::stderr().lock(),
+            "stale companion detected at {}; remove it or run `orbit semantic install --force`",
+            stale_path.display()
+        );
+    }
+}
+
+fn legacy_platform_companion_filename() -> String {
+    let base = concat!("orbit-", "embed", "-companion");
+    if cfg!(windows) {
+        format!("{base}-{}.exe", crate::platform_id())
+    } else {
+        format!("{base}-{}", crate::platform_id())
+    }
 }
 
 fn companion_needs_install(path: &Path) -> bool {
@@ -182,12 +204,12 @@ fn download_model_with_companion(
         .status()
         .map_err(|error| {
             OrbitError::Execution(format!(
-                "failed to run embedding companion for model download: {error}"
+                "failed to run search companion for model download: {error}"
             ))
         })?;
     if !status.success() {
         return Err(OrbitError::Execution(format!(
-            "embedding companion failed to download model `{model}`"
+            "search companion failed to download model `{model}`"
         )));
     }
     Ok(())
@@ -302,8 +324,8 @@ mod tests {
             std::fs::create_dir_all(&home).expect("create home");
             set_env("HOME", &home.to_string_lossy());
             set_env("USERPROFILE", &home.to_string_lossy());
-            set_env("ORBIT_EMBED_COMPANION", &source_path.to_string_lossy());
-            remove_env("ORBIT_EMBED_COMPANION_URL");
+            set_env("ORBIT_SEARCH_COMPANION", &source_path.to_string_lossy());
+            remove_env("ORBIT_SEARCH_COMPANION_URL");
 
             let paths = CompanionPaths::default_under_home().expect("paths");
             std::fs::create_dir_all(&paths.bin_dir).expect("create bin");
@@ -344,8 +366,8 @@ mod tests {
             let names = [
                 "HOME",
                 "USERPROFILE",
-                "ORBIT_EMBED_COMPANION",
-                "ORBIT_EMBED_COMPANION_URL",
+                "ORBIT_SEARCH_COMPANION",
+                "ORBIT_SEARCH_COMPANION_URL",
             ];
             let vars = names
                 .into_iter()

@@ -17,7 +17,7 @@ clap = ["orbit-common/clap"]
 chrono.workspace = true
 jsonschema.workspace = true
 orbit-common = { path = "../orbit-common" }
-orbit-embed = { path = "../orbit-embed" }
+orbit-search = { path = "../orbit-search" }
 orbit-engine = { path = "../orbit-engine" }
 orbit-knowledge = { path = "../orbit-knowledge" }
 orbit-policy = { path = "../orbit-policy" }

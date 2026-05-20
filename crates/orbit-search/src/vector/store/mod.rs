@@ -2,7 +2,7 @@
 //!
 //! Module layout:
 //!
-//! - [`schema`] — `CREATE TABLE IF NOT EXISTS` DDL for `embeddings` + `tasks_fts`.
+//! - [`schema`] — `CREATE TABLE IF NOT EXISTS` DDL for `embeddings` + `corpus_fts`.
 //! - [`upsert`] — `upsert_embeddings`, the BLAKE3-deduped per-field write path,
 //!   plus its private SQL helpers (`delete_field_rows`, content-hash check).
 //! - [`tasks`] — `index_task` / `reindex_tasks` task-corpus entry points.
@@ -32,7 +32,7 @@ pub struct VectorStore {
 
 impl VectorStore {
     /// Open the workspace-local semantic-search SQLite at `path`, applying WAL
-    /// + busy_timeout pragmas and creating the embeddings/tasks_fts schema if missing.
+    /// + busy_timeout pragmas and creating the embeddings/corpus_fts schema if missing.
     pub fn open(path: &Path) -> Result<Self, OrbitError> {
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent).map_err(|e| OrbitError::Store(e.to_string()))?;
@@ -69,14 +69,14 @@ fn enable_best_effort_wal_mode(conn: &Connection) {
         Ok(mode) if mode.eq_ignore_ascii_case("wal") => {}
         Ok(mode) => {
             orbit_common::tracing::warn!(
-                target: "orbit.embed.sqlite",
+                target: "orbit.search.sqlite",
                 journal_mode = mode.as_str(),
                 "requested WAL mode on the semantic database, but SQLite kept the active journal mode",
             );
         }
         Err(err) => {
             orbit_common::tracing::warn!(
-                target: "orbit.embed.sqlite",
+                target: "orbit.search.sqlite",
                 error = %err,
                 "could not set WAL mode on the semantic database; continuing with the default journal mode",
             );

@@ -95,6 +95,7 @@ pub(crate) fn run_with_embedder(
         .map(|hit| {
             let snippet = snippet_for_hit(
                 vector_store,
+                &hit.source_kind,
                 &hit.source_id,
                 &hit.best_field,
                 hit.best_chunk_idx,

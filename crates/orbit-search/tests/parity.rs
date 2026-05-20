@@ -11,8 +11,8 @@
 
 use chrono::Utc;
 use orbit_common::types::{Task, TaskPriority, TaskStatus, TaskType};
-use orbit_embed::NoopEmbedder;
-use orbit_embed::{UpsertReport, VectorStore};
+use orbit_search::NoopEmbedder;
+use orbit_search::{UpsertReport, VectorStore};
 use serde_json::json;
 
 fn fixture_task(id: &str) -> Task {

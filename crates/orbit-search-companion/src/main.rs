@@ -15,12 +15,12 @@ use std::path::PathBuf;
 use clap::Parser;
 use fastembed::{EmbeddingModel, ModelTrait, TextEmbedding, TextInitOptions};
 use orbit_common::types::OrbitError;
-use orbit_embed::{CompanionPaths, ModelSpec, RpcError, RpcRequest, RpcResponse, RpcResult};
+use orbit_search::{CompanionPaths, ModelSpec, RpcError, RpcRequest, RpcResponse, RpcResult};
 
 #[derive(Debug, Parser)]
-#[command(name = "orbit-embed-companion")]
+#[command(name = "orbit-search-companion")]
 struct Args {
-    #[arg(long, default_value = orbit_embed::DEFAULT_MODEL)]
+    #[arg(long, default_value = orbit_search::DEFAULT_MODEL)]
     model: String,
     #[arg(long)]
     model_path: Option<PathBuf>,

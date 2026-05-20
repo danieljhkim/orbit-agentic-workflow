@@ -199,10 +199,10 @@ fn run_orbit(cwd: &Path, home: &Path, args: &[&str], companion: Option<&Path>) -
         .env("HOME", home)
         .env("USERPROFILE", home)
         .env_remove("ORBIT_ROOT")
-        .env_remove("ORBIT_EMBED_COMPANION")
+        .env_remove("ORBIT_SEARCH_COMPANION")
         .args(args);
     if let Some(path) = companion {
-        command.env("ORBIT_EMBED_COMPANION", path);
+        command.env("ORBIT_SEARCH_COMPANION", path);
     }
     command.output().expect("run orbit")
 }
