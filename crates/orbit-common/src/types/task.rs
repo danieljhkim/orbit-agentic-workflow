@@ -63,6 +63,7 @@ pub enum TaskStatus {
     Backlog,
     /// Actively being worked on.
     #[cfg_attr(feature = "clap", value(name = "in-progress", alias = "in_progress"))]
+    #[serde(alias = "in-progress")]
     InProgress,
     /// Implementation complete; awaiting review/merge.
     Review,
@@ -906,7 +907,8 @@ fn find_dependency_path(
 #[cfg(test)]
 mod tests {
     use super::{
-        ExternalRef, Task, TaskArtifact, normalize_task_tags, push_external_ref_if_missing,
+        ExternalRef, Task, TaskArtifact, TaskStatus, normalize_task_tags,
+        push_external_ref_if_missing,
     };
 
     #[test]
@@ -1112,5 +1114,18 @@ updated_at: 2026-01-01T00:00:00Z
         assert_eq!(artifact.path, "binary.bin");
         assert_eq!(artifact.content, vec![0xff, 0xfe, 0xfd]);
         assert_eq!(artifact.media_type, "application/octet-stream");
+    }
+
+    #[test]
+    fn task_status_deserializes_both_hyphen_and_snake_for_in_progress() {
+        let snake: TaskStatus = serde_json::from_str("\"in_progress\"").expect("snake de");
+        let hyphen: TaskStatus = serde_json::from_str("\"in-progress\"").expect("hyphen de");
+        assert_eq!(snake, TaskStatus::InProgress);
+        assert_eq!(hyphen, TaskStatus::InProgress);
+        // serialize remains snake_case for persisted history/events compat with prior records
+        assert_eq!(
+            serde_json::to_string(&TaskStatus::InProgress).expect("ser"),
+            "\"in_progress\""
+        );
     }
 }

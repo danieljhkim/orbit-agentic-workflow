@@ -251,3 +251,56 @@ fn get_task_artifact_rejects_traversal_path() {
             assert_eq!(response.status(), StatusCode::BAD_REQUEST);
         });
 }
+
+/// Exercises PATCH /api/tasks/:id with the dashboard's emitted spelling {"status":"in-progress"}
+/// against a backlog task. Before the serde alias fix this produced 422 on JSON extraction;
+/// now it succeeds and the response continues to surface status as the display form "in-progress".
+#[tokio::test]
+async fn patch_api_accepts_in_progress_hyphen_from_dashboard_and_returns_in_progress() {
+    use axum::Router;
+    use axum::http::{Method, Request, header};
+
+    let runtime = OrbitRuntime::in_memory().expect("build runtime");
+    let created = runtime
+        .add_task(TaskAddParams {
+            title: "Dashboard status update test".to_string(),
+            description: "backlog task to be moved via PATCH with hyphen spelling".to_string(),
+            status: Some(TaskStatus::Backlog),
+            workspace_path: Some(".".to_string()),
+            ..Default::default()
+        })
+        .expect("seed backlog task");
+    let task_id = created.id;
+
+    // Wrap to exercise the literal /api/tasks path per acceptance criteria
+    let app = Router::new()
+        .nest("/api", router())
+        .with_state(Arc::new(runtime));
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .method(Method::PATCH)
+                .uri(format!("/api/tasks/{}", task_id))
+                .header(header::CONTENT_TYPE, "application/json")
+                .header(header::ORIGIN, "http://localhost:7878")
+                .body(Body::from(r#"{"status":"in-progress"}"#))
+                .expect("build patch request"),
+        )
+        .await
+        .expect("oneshot");
+
+    assert_eq!(
+        response.status(),
+        StatusCode::OK,
+        "PATCH with in-progress must succeed (not 422)"
+    );
+
+    let body = body_json(response).await;
+    assert_eq!(body["id"], serde_json::json!(task_id));
+    assert_eq!(
+        body["status"],
+        serde_json::json!("in-progress"),
+        "response must continue to expose dashboard display spelling"
+    );
+}
