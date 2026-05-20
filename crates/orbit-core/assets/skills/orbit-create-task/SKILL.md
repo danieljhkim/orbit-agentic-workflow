@@ -23,9 +23,10 @@ See the `orbit` skill for the full mapping rule and surface coverage. Examples b
 1. Confirm objective, constraints, and done criteria.
 2. Inspect codebase context before creating the task. If you want background on prior related work, `orbit.semantic.search` is available (hybrid BM25 + cosine over indexed task fields) — useful when the proposed work might overlap with a task whose title uses different vocabulary. Optional, not required. See `orbit-semantic`.
 3. Write clear acceptance criteria that define observable success.
-4. Add assumptions, risks, and rollback notes to the description when they matter.
-5. Call the task-add tool (`orbit_task_add` over MCP, or `orbit tool run orbit.task.add` from the shell) with the description, acceptance criteria, workspace, and canonical `model` family in the JSON input. Use `codex`, `claude`, `gemini`, or `grok`; full model strings are accepted and auto-normalized. Leave `plan` blank unless you have a compelling reason to pre-seed it.
-6. Use the result as the default confirmation. If you need to re-fetch the canonical stored record, call `orbit_task_show({"id": "<returned-id>"})` (MCP) or `orbit tool run orbit.task.show --input '{"id": "<returned-id>"}'` (CLI).
+4. Choose task metadata while the scope is fresh: set `complexity` to `low`, `medium`, or `hard` whenever you can make a reasonable call. Leave it unset only when the current context is too thin to classify.
+5. Add assumptions, risks, and rollback notes to the description when they matter.
+6. Call the task-add tool (`orbit_task_add` over MCP, or `orbit tool run orbit.task.add` from the shell) with the description, acceptance criteria, workspace, complexity when known, and canonical `model` family in the JSON input. Use `codex`, `claude`, `gemini`, or `grok`; full model strings are accepted and auto-normalized. Leave `plan` blank unless you have a compelling reason to pre-seed it.
+7. Use the result as the default confirmation. If you need to re-fetch the canonical stored record, call `orbit_task_show({"id": "<returned-id>"})` (MCP) or `orbit tool run orbit.task.show --input '{"id": "<returned-id>"}'` (CLI).
 
 ## Selector-First Context
 
@@ -43,6 +44,7 @@ See the `orbit` skill for the full mapping rule and surface coverage. Examples b
 - `description` should be multi-line markdown when the task is non-trivial.
 - Required fields: `title`, `description`, and `workspace`.
 - Strongly prefer supplying `acceptance_criteria`.
+- Strongly prefer supplying `complexity` (`low`, `medium`, or `hard`) when enough codebase context exists to judge scope.
 - Blank or missing task companion files (`plan.md`, `execution-summary.md`) are treated as blank task fields. Repair them through `orbit.task.update` (`plan` or `execution_summary`), not manual file edits.
 - Orbit fills `created_by`, `planned_by`, and `implemented_by` automatically from execution context when those roles are authored during the task lifecycle.
 - Valid task types are `feature`, `bug`, `refactor`, and `chore`. Use `orbit-track-issues` for agent self-reported friction instead of task types.
@@ -50,7 +52,7 @@ See the `orbit` skill for the full mapping rule and surface coverage. Examples b
 ## Optional but Behavior-Affecting Fields
 
 ### Tier 1 - Nudge
-- `complexity: "hard"` trigger: set when the task obviously cannot share a batch (large surface, multi-crate cross-cut, ambiguous design).
+- `complexity: "low" | "medium" | "hard"` metadata: set for most tasks so humans and automation can see expected scope. Use `low` for narrow single-surface work, `medium` for moderate multi-file or modestly uncertain work, and `hard` when the task obviously cannot share a batch (large surface, multi-crate cross-cut, ambiguous design).
   Behavior anchor: `crates/orbit-engine/src/executor/automation/batch/dispatch.rs` `task_prefers_single_batch`.
 - `dependencies: ["ORB-NNNN", ...]` trigger: set when prerequisite tasks must reach a dependency-satisfying status before this task starts.
   Behavior anchor: `crates/orbit-common/src/types/task.rs` `task_dependencies_ready`.
@@ -119,9 +121,10 @@ orbit tool run orbit.task.add --input '{
   "context_files": ["file:src/lib.rs", "dir:src/command", "symbol:src/lib.rs#run:function"],
   "workspace": "<absolute_or_relative_repo_path>",
   "priority": "<low|medium|high|critical>",
+  "complexity": "<low|medium|hard>",
   "type": "<feature|bug|refactor|chore>",
   "model": "<agent-family>" # codex | claude | gemini | grok
-  # Optional: complexity, dependencies, relations, parent_id, source_task_id, tags - see "Optional but Behavior-Affecting Fields"
+  # Optional: dependencies, relations, parent_id, source_task_id, tags - see "Optional but Behavior-Affecting Fields"
 }'
 ```
 
@@ -135,9 +138,10 @@ orbit_task_add({
   "context_files": ["file:src/lib.rs", "symbol:src/lib.rs#run:function"],
   "workspace": "<absolute_or_relative_repo_path>",
   "priority": "<low|medium|high|critical>",
+  "complexity": "<low|medium|hard>",
   "type": "<feature|bug|refactor|chore>",
   "model": "<agent-family>"
-  # Optional: complexity, dependencies, relations, parent_id, source_task_id, tags - see "Optional but Behavior-Affecting Fields"
+  # Optional: dependencies, relations, parent_id, source_task_id, tags - see "Optional but Behavior-Affecting Fields"
 })
 ```
 
