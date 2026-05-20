@@ -66,11 +66,11 @@ summary: One-line hook for agent retrieval
 tags: [feature-slug]
 paths: ["crates/orbit-cli/**"]
 related_features: [feature-slug]
-related_artifacts: [ORB-00160, ADR-0168, L20260514-3]
+related_artifacts: [ORB-00160, ADR-0168, L-0003]
 ---
 ```
 
-`type` and `summary` are required by the strict parser. `summary` must be a non-empty single line. `related_artifacts` accepts `ORB-NNNNN`, `LYYYYMMDD-N`, `FYYYY-MM-NNN`, and `ADR-NNNN` strings. The tolerant indexer infers these fields for legacy design docs and pattern docs, but new docs should write them explicitly. Orbit-docs does not index `.orbit/`; ADR bodies remain owned by `orbit-adr`.
+`type` and `summary` are required by the strict parser. `summary` must be a non-empty single line. `related_artifacts` accepts `ORB-NNNNN`, `L-NNNN`, `FYYYY-MM-NNN`, and `ADR-NNNN` strings. The tolerant indexer infers these fields for legacy design docs and pattern docs, but new docs should write them explicitly. Orbit-docs does not index `.orbit/`; ADR bodies remain owned by `orbit-adr`.
 
 ---
 

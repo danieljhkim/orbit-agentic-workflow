@@ -43,7 +43,7 @@ When a field changes, Orbit emits one command-audit row per field. The payload c
 - tool name
 - redaction kinds: `env`, `pattern`, `home_dir`
 
-Original and redacted values are not recorded. Tests should inspect these rows through the same backing surface as `orbit audit list --json` per L20260517-9.
+Original and redacted values are not recorded. Tests should inspect these rows through the same backing surface as `orbit audit list --json` per L-0009.
 
 ## Non-Goals
 

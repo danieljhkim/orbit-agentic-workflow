@@ -20,12 +20,12 @@ Both surfaces accept the same JSON. Use the CLI examples when shell access is av
 | `orbit.learning.add` | `orbit_learning_add({...})` | `orbit learning add --summary "..." --path "crates/orbit-core/**/*.rs" --tag rust --body-file note.md` |
 | `orbit.learning.list` | `orbit_learning_list({...})` | `orbit learning list --status active --tag rust` |
 | `orbit.learning.search` | `orbit_learning_search({...})` | `orbit learning search --path crates/orbit-core/src/lib.rs` |
-| `orbit.learning.show` | `orbit_learning_show({...})` | `orbit learning show --id L20260514-1` |
-| `orbit.learning.comment.add` | `orbit_learning_comment_add({...})` | `orbit learning comment add --learning-id L20260514-1 --body "Narrow note" --model codex` |
-| `orbit.learning.comment.list` | `orbit_learning_comment_list({...})` | `orbit learning comment list --learning-id L20260514-1` |
+| `orbit.learning.show` | `orbit_learning_show({...})` | `orbit learning show --id L-0001` |
+| `orbit.learning.comment.add` | `orbit_learning_comment_add({...})` | `orbit learning comment add --learning-id L-0001 --body "Narrow note" --model codex` |
+| `orbit.learning.comment.list` | `orbit_learning_comment_list({...})` | `orbit learning comment list --learning-id L-0001` |
 | `orbit.learning.comment.delete` | `orbit_learning_comment_delete({...})` | `orbit learning comment delete --id C20260514-1` |
-| `orbit.learning.update` | `orbit_learning_update({...})` | `orbit learning update --id L20260514-1 --priority 200` |
-| `orbit.learning.supersede` | `orbit_learning_supersede({...})` | `orbit learning supersede --id L20260514-1 --with L20260514-7` |
+| `orbit.learning.update` | `orbit_learning_update({...})` | `orbit learning update --id L-0001 --priority 200` |
+| `orbit.learning.supersede` | `orbit_learning_supersede({...})` | `orbit learning supersede --id L-0001 --with L-0007` |
 | `orbit.learning.prune` | `orbit_learning_prune({...})` | `orbit learning prune --stale-only` |
 | `orbit.learning.reindex` | `orbit_learning_reindex({...})` | `orbit learning reindex` |
 
@@ -46,7 +46,7 @@ Run `orbit tool list | grep orbit.learning` if you suspect the local tool surfac
 3. **Close the loop with a source citation when the learning has a code anchor.** If the learning captures a code-level convention — a defensive pattern, gotcha, non-obvious workaround, or specific default that survives in a single (or small set of) source location(s) — drop a one-line citation comment at each such location so the next reader sees the rationale before they reach for the change:
 
    ```rust
-   // L-NNNNNNNN-N: <one-line rationale>
+   // L-NNNN: <one-line rationale>
    ```
 
    Use the literal learning ID returned from `add` (greppability is the point). If the learning is workflow-only and has no single source-code anchor, skip the citation — push-injection covers it.
@@ -106,18 +106,18 @@ Attach a brief observation to an existing active learning:
 
 ```bash
 orbit learning comment add \
-  --learning-id L20260514-1 \
+  --learning-id L-0001 \
   --body "When this fires in orbit-core, also check the MCP safe surface." \
   --model codex \
   --json
-orbit learning comment list --learning-id L20260514-1
+orbit learning comment list --learning-id L-0001
 orbit learning comment delete --id C20260514-1
 ```
 
 Replace one learning with another:
 
 ```bash
-orbit learning supersede --id L20260514-1 --with L20260514-9
+orbit learning supersede --id L-0001 --with L-0009
 ```
 
 Audit stale learnings without deleting:

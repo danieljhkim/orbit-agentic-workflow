@@ -89,7 +89,7 @@ The walker explicitly skips any path under `.orbit/`, even if a configured root 
 The boundary is now explicit:
 
 - **Learning** = a load-bearing rule with a known failure mode. CRUD'd via `orbit.learning.*`. Supersedable. Scope-glob push-injected. Lives at `.orbit/learnings/`.
-- **Doc** = explanatory context. PR-reviewed Markdown under `docs/`. No supersede flow. Pull-retrieved via `orbit.docs.*`. Authors link to load-bearing learnings via `related_artifacts: [L<YYYYMMDD>-N]` when useful.
+- **Doc** = explanatory context. PR-reviewed Markdown under `docs/`. No supersede flow. Pull-retrieved via `orbit.docs.*`. Authors link to load-bearing learnings via `related_artifacts: [L-NNNN]` when useful.
 
 If you find yourself wanting to write "rule: do X because Y" in a doc, that's a learning. If you find yourself wanting to write a multi-paragraph explanation of *why* a rule exists, that's a doc that links to the learning.
 

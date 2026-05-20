@@ -32,7 +32,7 @@ summary: One-line hook for agent retrieval                # required
 tags: [hook, learning, audit]                             # optional
 paths: ["crates/orbit-cli/**"]                            # optional
 related_features: [hook-rewrite]                          # optional
-related_artifacts: [ORB-00160, ADR-0168, L20260514-3]     # optional
+related_artifacts: [ORB-00160, ADR-0168, L-0003]     # optional
 ---
 ```
 
@@ -71,7 +71,7 @@ String list with ID-prefix dispatch (see [ADR-0171]):
 | Prefix shape | Resolves to |
 |--------------|-------------|
 | `ORB-NNNNN` | Orbit task |
-| `L<YYYYMMDD>-<N>` | Project learning |
+| `L-NNNN` | Project learning |
 | `F<YYYY>-<MM>-<NNN>` | Friction report |
 | `ADR-NNNN` | Architecture decision record |
 
