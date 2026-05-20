@@ -3,7 +3,7 @@ summary: "ADR Artifact — Design"
 type: design
 title: "ADR Artifact — Design"
 owner: claude
-last_updated: 2026-05-10
+last_updated: 2026-05-20
 status: Draft
 feature: adr-artifact
 doc_role: design
@@ -12,7 +12,7 @@ tags: ["adr-artifact"]
 
 # ADR Artifact — Design
 
-This document specifies the v2 implementation: artifact shape, storage layout, tool contracts, lifecycle transitions, migration mechanics, and the boundaries that keep `orbit-store` and `orbit-tools` cleanly scoped. v1 ships none of this; the design is captured now so the migration and tooling are not invented under deadline pressure. See [1_overview.md](./1_overview.md) for purpose and [3_vision.md](./3_vision.md) for open questions.
+This document specifies the v2 implementation: artifact shape, storage layout, tool contracts, lifecycle transitions, historical migration mechanics, and the boundaries that keep `orbit-store` and `orbit-tools` cleanly scoped. v1 shipped none of this; the design was captured so the migration and tooling were not invented under deadline pressure. See [1_overview.md](./1_overview.md) for purpose and [3_vision.md](./3_vision.md) for open questions.
 
 ---
 
@@ -170,7 +170,7 @@ CONVENTIONS.md is updated in the migration task to reflect this. The lint runs i
 
 ## 7. Migration
 
-A one-shot tool walks every `docs/design/*/4_decisions.md`, parses each ADR entry, builds a feature-aware ID resolution table, writes artifacts, and runs a comprehensive reference sweep. Pass-one parses and allocates; pass-two cross-references and sweeps. The split exists because resolving local references requires the full map to be built first.
+The completed one-shot migration walked every `docs/design/*/4_decisions.md`, parsed each ADR entry, built a feature-aware ID resolution table, wrote artifacts, and ran a comprehensive reference sweep. Pass-one parsed and allocated; pass-two cross-referenced and swept. The split existed because resolving local references required the full map to be built first. The `orbit adr migrate` CLI wrapper and `adr_migration` implementation were retired after corpus import; current ADR work goes through the `orbit.adr.*` tool surface.
 
 ### 7.1 Parse (pass one)
 
@@ -207,11 +207,11 @@ Any reference that cannot be mechanically resolved is left as-is and logged to `
 
 ### 7.5 Regenerate `4_decisions.md`
 
-Per [ADR-0020](./4_decisions.md#adr-006--auto-generate-per-feature-4_decisionsmd-index), each feature's `4_decisions.md` is rebuilt from the store via `orbit.adr.list --feature=<name> --format=md` with canonical ordering (ascending by legacy feature ADR number, then by global ID for legacy-less entries — see [ADR-0020]). The migration tool emits the first generated version; subsequent updates run automatically. Cross-cutting ADRs ([ADR-0021](./4_decisions.md#adr-007--cross-cutting-adrs-use-a-dedicated-cross-cutting-index)) populate `docs/design/cross-cutting/4_decisions.md` from the same generator.
+Per [ADR-0020](./4_decisions.md#adr-006--auto-generate-per-feature-4_decisionsmd-index), each feature's `4_decisions.md` is rebuilt from the store via `orbit.adr.list --feature=<name> --format=md` with canonical ordering (ascending by legacy feature ADR number, then by global ID for legacy-less entries — see [ADR-0020]). The retired migration tool emitted the first generated version; subsequent updates run automatically. Cross-cutting ADRs ([ADR-0021](./4_decisions.md#adr-007--cross-cutting-adrs-use-a-dedicated-cross-cutting-index)) populate `docs/design/cross-cutting/4_decisions.md` from the same generator.
 
 ### 7.6 Migration report
 
-The migration tool emits `migration-report.md` at the workspace root containing:
+The retired migration tool emitted `migration-report.md` at the workspace root containing:
 
 - Every entry with `validation_warnings` (which rules failed, what the artifact looks like, the source path).
 - Every reference the sweep refused to resolve (file, line, original text, why it couldn't be resolved).

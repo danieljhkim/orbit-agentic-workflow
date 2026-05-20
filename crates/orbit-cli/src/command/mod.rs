@@ -1,4 +1,3 @@
-pub mod adr;
 pub mod definitions;
 pub mod docs;
 pub mod environment;
@@ -49,7 +48,6 @@ Environment:
 Operate:
   run         Run a workflow (ship, duel-plan, job)
   task        Create, update, and manage tasks
-  adr         Architecture Decision Record operations
   docs        Search and manage the indexed docs corpus
   learning    Create, search, and curate project learnings
   semantic    Manage local semantic-search indexing
@@ -93,7 +91,6 @@ pub enum Commands {
     // ── Operate ──
     Run(run::RunCommand),
     Task(Box<task::TaskCommand>),
-    Adr(adr::AdrCommand),
     Docs(docs::DocsCommand),
     Learning(learning::LearningCommand),
     Semantic(semantic::SemanticCommand),
@@ -132,7 +129,6 @@ impl Execute for Commands {
             Commands::Config(cmd) => cmd.execute(runtime),
             Commands::Run(cmd) => cmd.execute(runtime),
             Commands::Task(cmd) => (*cmd).execute(runtime),
-            Commands::Adr(cmd) => cmd.execute(runtime),
             Commands::Docs(cmd) => cmd.execute(runtime),
             Commands::Learning(cmd) => cmd.execute(runtime),
             Commands::Semantic(cmd) => cmd.execute(runtime),

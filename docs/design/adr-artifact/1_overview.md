@@ -3,7 +3,7 @@ summary: "ADR Artifact — Overview"
 type: design
 title: "ADR Artifact — Overview"
 owner: claude
-last_updated: 2026-05-10
+last_updated: 2026-05-20
 status: Draft
 feature: adr-artifact
 doc_role: overview
@@ -14,7 +14,7 @@ tags: ["adr-artifact"]
 
 The ADR artifact proposal lifts Architecture Decision Records out of per-feature `4_decisions.md` markdown files into a first-class Orbit artifact — alongside Tasks, Activities, Jobs, and Skills. Each ADR gets a stable globally-unique ID, structured lifecycle state, owner, supersession edges, and is queryable through an `orbit.adr.*` tool surface. Feature design docs reference decisions by ID (`[ADR-042]`) instead of inlining them, and `2_design.md` returns to present-tense current-state writing. **This is a v2 proposal.** v1 ships unchanged; v2 migrates the existing markdown ADR corpus into the store and retires `4_decisions.md` as a hand-maintained file.
 
-This document is the entry point. [2_design.md](./2_design.md) specifies the schema, scoping, tool surface, and migration mechanics; [3_vision.md](./3_vision.md) names open questions; [4_decisions.md](./4_decisions.md) is the ADR log for this feature (in markdown until the artifact it describes exists).
+This document is the entry point. [2_design.md](./2_design.md) specifies the schema, scoping, tool surface, and historical migration mechanics; [3_vision.md](./3_vision.md) names open questions; [4_decisions.md](./4_decisions.md) is the ADR log for this feature (in markdown until the artifact it describes exists).
 
 ---
 
@@ -88,7 +88,7 @@ v1 ships unchanged: `4_decisions.md` remains the source of truth, this folder is
 
 1. Schema and store (`orbit-common::types::adr`, `orbit-store::adr_store`).
 2. Tool surface (`orbit-tools::adr_tool`) and CLI commands.
-3. One-shot migration tool that walks every `docs/design/*/4_decisions.md`, parses each ADR entry against the existing template, and writes one artifact per entry with `legacy_id` populated.
+3. Completed one-shot migration that walked every `docs/design/*/4_decisions.md`, parsed each ADR entry against the existing template, and wrote one artifact per entry with `legacy_ids` populated. The migration command was retired after corpus import.
 4. CONVENTIONS.md update that drops the `4_decisions.md` requirement (or redefines it as generated).
 5. Sweep of feature `2_design.md` files to replace inline `[T...]` change-history with `[ADR-NNNN]` citations where applicable — this is the leverage point for trimming wordiness.
 
