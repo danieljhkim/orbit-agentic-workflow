@@ -1,4 +1,4 @@
-//! Canonical command surface for semantic-search operations.
+//! Canonical command surface for orbit-search operations.
 //!
 //! Tool adapters and CLI delegates parse request envelopes, call into these
 //! commands, and shape the returned typed results for their transport. The

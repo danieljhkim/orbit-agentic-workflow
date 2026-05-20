@@ -1,4 +1,4 @@
-//! Workspace-local semantic-search storage.
+//! Workspace-local orbit-search storage.
 //!
 //! Module layout:
 //!

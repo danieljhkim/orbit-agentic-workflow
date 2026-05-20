@@ -3,11 +3,11 @@ summary: "Semantic Search — Vision"
 type: design
 title: "Semantic Search — Vision"
 owner: claude
-last_updated: 2026-05-10
+last_updated: 2026-05-20
 status: Draft
-feature: semantic-search
+feature: orbit-search
 doc_role: vision
-tags: ["semantic-search"]
+tags: ["orbit-search"]
 ---
 
 # Semantic Search — Vision
@@ -52,7 +52,7 @@ Decision deferred to the phase-2 design. The phase-1 schema is intentionally com
 
 Models improve. The day BGE-medium-en-v2 ships and benchmarks better, the team will want to swap. The design supports this — the `model_id` PK column lets two model generations coexist while reindexing — but the operational story is unspecified:
 
-- Does `orbit semantic reindex --model NEW` block on completion or run in the background?
+- Does `orbit semantic index --model NEW` block on completion or run in the background?
 - Is there a transition period where searches union both models' results, or does the new model become authoritative immediately?
 - Who triggers the migration: the user, an upgrade hook, or auto-detection on `orbit upgrade`?
 
@@ -60,7 +60,7 @@ The schema is ready for any answer; the UX is not yet chosen.
 
 ### 1.5 Cross-task semantic links
 
-Once embeddings exist, the cheapest possible feature is "show me tasks similar to this one" — already in scope as `orbit semantic related`. Less obvious:
+Once embeddings exist, the cheapest possible feature is "show me tasks similar to this one" — already in scope as `orbit search --related`. Less obvious:
 
 - **Auto-detect duplicate task creation.** Run the new task's `purpose` through cosine before insert; if a high-similarity match exists, warn the user.
 - **Auto-suggest dependencies.** A new task's content is highly similar to an in-progress task — should it depend on it?
@@ -135,7 +135,7 @@ Every published "hybrid retrieval" production system above runs as a service. Or
 
 ### 3.2 Forward compatibility with the graph corpus
 
-The schema's `source_kind` discriminator is not future-proofing for its own sake; it commits to a specific phase-2 path where graph symbols join the same vector store under a different `source_kind`. The brute-force ceiling and the `sqlite-vec` upgrade path are sized against that future corpus, not against today's task-only corpus. Most semantic-search-on-tasks projects assume tasks are the whole story; this one explicitly does not.
+The schema's `source_kind` discriminator is not future-proofing for its own sake; it commits to a specific phase-2 path where graph symbols join the same vector store under a different `source_kind`. The brute-force ceiling and the `sqlite-vec` upgrade path are sized against that future corpus, not against today's task-only corpus. Most orbit-search-on-tasks projects assume tasks are the whole story; this one explicitly does not.
 
 ### 3.3 Failure-mode honesty in the score breakdown
 

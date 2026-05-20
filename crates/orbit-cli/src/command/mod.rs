@@ -7,6 +7,7 @@ pub mod log;
 pub mod mcp;
 pub mod observe;
 pub mod run;
+pub mod search;
 pub mod semantic;
 pub mod task;
 pub mod web;
@@ -44,13 +45,14 @@ Environment:
   init        Initialize the global Orbit root (~/.orbit)
   workspace   Manage workspaces
   config      Show or update Orbit configuration
+  semantic    Manage local orbit-search indexing
 
 Operate:
   run         Run a workflow (ship, duel-plan, job)
   task        Create, update, and manage tasks
+  search      Search tasks, docs, learnings, and ADRs
   docs        Search and manage the indexed docs corpus
   learning    Create, search, and curate project learnings
-  semantic    Manage local semantic-search indexing
 
 Observe:
   graph       Query the knowledge graph
@@ -87,13 +89,14 @@ pub enum Commands {
     Init(init::InitCommand),
     Workspace(workspace::WorkspaceCommand),
     Config(config::ConfigCommand),
+    Semantic(semantic::SemanticCommand),
 
     // ── Operate ──
     Run(run::RunCommand),
     Task(Box<task::TaskCommand>),
+    Search(search::SearchCommand),
     Docs(docs::DocsCommand),
     Learning(learning::LearningCommand),
-    Semantic(semantic::SemanticCommand),
 
     // ── Observe ──
     Graph(graph::GraphCommand),
@@ -127,11 +130,12 @@ impl Execute for Commands {
             Commands::Init(cmd) => cmd.execute(runtime),
             Commands::Workspace(cmd) => cmd.execute(runtime),
             Commands::Config(cmd) => cmd.execute(runtime),
+            Commands::Semantic(cmd) => cmd.execute(runtime),
             Commands::Run(cmd) => cmd.execute(runtime),
             Commands::Task(cmd) => (*cmd).execute(runtime),
+            Commands::Search(cmd) => cmd.execute(runtime),
             Commands::Docs(cmd) => cmd.execute(runtime),
             Commands::Learning(cmd) => cmd.execute(runtime),
-            Commands::Semantic(cmd) => cmd.execute(runtime),
             Commands::Graph(cmd) => cmd.execute(runtime),
             Commands::Audit(cmd) => cmd.execute(runtime),
             Commands::Log(cmd) => cmd.execute(runtime),
@@ -230,29 +234,39 @@ mod tests {
     }
 
     #[test]
-    fn cli_parses_semantic_search() {
-        let cli = Cli::parse_from(["orbit", "semantic", "search", "semantic search design"]);
+    fn cli_parses_semantic_index() {
+        let cli = Cli::parse_from(["orbit", "semantic", "index", "--force"]);
         match cli.command {
             Commands::Semantic(command) => match command.command {
-                SemanticSubcommand::Search(args) => {
-                    assert_eq!(args.query, "semantic search design")
-                }
-                _ => panic!("expected semantic search"),
+                SemanticSubcommand::Index(args) => assert!(args.force),
+                _ => panic!("expected semantic index"),
             },
             _ => panic!("expected top-level semantic command"),
         }
     }
 
     #[test]
-    fn cli_parses_semantic_related() {
-        let cli = Cli::parse_from(["orbit", "semantic", "related", "T20260510-3"]);
+    fn cli_parses_top_level_search() {
+        let cli = Cli::parse_from([
+            "orbit",
+            "search",
+            "semantic search design",
+            "--semantic",
+            "--kind",
+            "task",
+        ]);
         match cli.command {
-            Commands::Semantic(command) => match command.command {
-                SemanticSubcommand::Related(args) => assert_eq!(args.task_id, "T20260510-3"),
-                _ => panic!("expected semantic related"),
-            },
-            _ => panic!("expected top-level semantic command"),
+            Commands::Search(args) => {
+                assert_eq!(args.query.as_deref(), Some("semantic search design"));
+                assert!(args.semantic);
+            }
+            _ => panic!("expected top-level search command"),
         }
+    }
+
+    #[test]
+    fn cli_rejects_search_query_with_related() {
+        assert!(Cli::try_parse_from(["orbit", "search", "query", "--related", "ORB-1"]).is_err());
     }
 
     #[test]

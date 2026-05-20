@@ -64,7 +64,7 @@ Paste the prompt below into your agent (Claude Code, Codex CLI, or Gemini CLI) *
 > 3. Clone `https://github.com/danieljhkim/orbit` into the location from step 1, then run `make install`. This builds with cargo and copies the `orbit` binary to `$INSTALL_BIN_DIR` (default: `~/.cargo/bin`). Confirm the install path with me before running. Verify with `orbit --version`.
 > 4. Run `orbit init` to initialize global state at `~/.orbit`.
 > 5. From *this* repository (not the Orbit clone), run `orbit workspace init --mcp`. This creates `.orbit/` here and auto-registers Orbit's MCP server with installed agent CLIs (Claude Code, Codex, Gemini).
-> 6. Ask me whether to enable semantic search (**optional**). `orbit semantic install` downloads a small embedder companion plus the default bge-small model (lives under `~/.orbit/embed/`) and powers `orbit.semantic.search` / `orbit.semantic.related` over tasks. Don't install without my OK. If I accept and tasks already exist in this workspace, also run `orbit semantic reindex` to backfill the corpus.
+> 6. Ask me whether to enable semantic search (**optional**). `orbit semantic install` downloads a small embedder companion plus the default bge-small model (lives under `~/.orbit/embed/`) and powers `orbit search --semantic` / `orbit search --related` over tasks. Don't install without my OK. If I accept and tasks already exist in this workspace, also run `orbit semantic index` to backfill the corpus.
 > 7. Read the key documents so you actually understand the model:
 >    - `README.md` — feature surface, install model, plugin vs CLI
 >    - `docs/POSITIONING.md` — what Orbit is for, what it isn't (especially "who this is for")
@@ -135,15 +135,17 @@ Customizing crews (which model runs planner/implementer/reviewer), the base bran
 
 ## Semantic Search (optional)
 
-Opt-in hybrid (embedding + BM25) search over task fields via `orbit.semantic.search` / `orbit.semantic.related`. **Scope today is tasks only** — graph, ADRs, learnings, and code are not indexed. The embedder runs as a separate companion subprocess, so semantic search has zero cost when unused.
+`orbit search` is the unified query surface for tasks, docs, learnings, and ADRs. It defaults to lexical matching. Opt into hybrid embedding + BM25 ranking over task fields with `--semantic`, or find cosine-neighbor tasks with `--related`. The embedder runs as a separate companion subprocess, so semantic search has zero cost when unused.
 
 ```bash
 orbit semantic install    # one-time: download companion + default model (bge-small)
-orbit semantic reindex    # backfill existing tasks
-orbit semantic search "race in the scheduler when locks overlap"
+orbit semantic index      # backfill existing tasks
+orbit search "race in the scheduler when locks overlap"
+orbit search "race in the scheduler when locks overlap" --semantic --kind task
+orbit search --related ORB-00042
 ```
 
-After install, task writes are embedded automatically in the background; `reindex` is only needed for the initial backfill. Companion + models live under `~/.orbit/embed/`; the per-workspace index at `.orbit/state/semantic.db`.
+After install, task writes are embedded automatically in the background; `index` is only needed for the initial backfill. Companion + models live under `~/.orbit/embed/`; the per-workspace index at `.orbit/state/semantic.db`. Vector search is task-only today; docs, learnings, and ADRs remain lexical even when `--semantic` is set.
 
 ---
 
@@ -184,7 +186,7 @@ Two install surfaces. The CLI gives you the full power of Orbit. Choose the plug
 - `orbit-review-task` — file findings on another agent's work without transitioning status
 - `orbit-adr` — author, accept, or supersede an Architecture Decision Record
 - `orbit-graph` — query the parsed knowledge graph (callers, implementors, refs)
-- `orbit-semantic` — find tasks by topic; dedup and related-task lookups
+- `orbit-search` — search tasks, docs, learnings, and ADRs; dedup and related-task lookups
 - `orbit-debug-job-failure` — diagnose failed, stuck, or cancelled runs
 - `orbit-track-issues` — capture agent-self-reported friction with Orbit tooling itself
 
@@ -197,7 +199,7 @@ Two install surfaces. The CLI gives you the full power of Orbit. Choose the plug
 `orbit workspace init --mcp` registers the Orbit MCP server with the local agent CLI (Claude Code, Codex, Gemini), same as plugin. Expand below to see the full tool surface.
 
 <details>
-<summary><strong>Full tool reference</strong> — task, review, graph, semantic, adr, design, learning, friction (click to expand)
+<summary><strong>Full tool reference</strong> — task, review, graph, search, semantic, adr, design, learning, friction (click to expand)
 </summary>
 
 | Namespace | Tool | Purpose |
@@ -222,8 +224,11 @@ Two install surfaces. The CLI gives you the full power of Orbit. Choose the plug
 | | `orbit.graph.refs` | List references to a symbol |
 | | `orbit.graph.history` | Git history for a symbol |
 | | `orbit.graph.pack` | Bundle a connected slice of the graph for a prompt |
-| **semantic** | `orbit.semantic.search` | Hybrid (embedding + BM25) search over task fields — title, description, plan, acceptance, execution summary |
-| | `orbit.semantic.related` | Find tasks semantically similar to a given task |
+| **search** | `orbit.search` | Search tasks, docs, learnings, and ADRs; `semantic=true` opts task results into hybrid embedding + BM25 ranking |
+| **semantic** | `orbit.semantic.install` | Install the local embedding companion and model |
+| | `orbit.semantic.uninstall` | Remove the embedding companion and/or models |
+| | `orbit.semantic.stats` | Show companion and index status |
+| | `orbit.semantic.index` | Rebuild task embeddings |
 | **adr** | `orbit.adr.add` | Author an Architecture Decision Record |
 | | `orbit.adr.update` | Edit an ADR |
 | | `orbit.adr.show` | Fetch an ADR |

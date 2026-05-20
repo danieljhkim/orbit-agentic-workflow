@@ -43,6 +43,7 @@ use crate::command::docs::{DocsCommand, DocsSubcommand};
 use crate::command::hook::{HookCommand, HookSubcommand};
 use crate::command::learning::{LearningCommand, LearningSubcommand};
 use crate::command::mcp::{McpCommand, McpSubcommand};
+use crate::command::search::SearchCommand;
 use crate::command::tool::{OutputFormat, ToolSubcommand};
 use crate::command::workspace::{WorkspaceCommand, WorkspaceSubcommand};
 use crate::command::{Commands, Execute, init::InitCommand};
@@ -173,6 +174,7 @@ fn json_error_output_preference(command: &Commands) -> Option<bool> {
             DocsSubcommand::Reindex(args) => args.json.then_some(true),
             DocsSubcommand::Migrate(args) => args.json.then_some(true),
         },
+        Commands::Search(SearchCommand { json: true, .. }) => Some(true),
         _ => None,
     }
 }

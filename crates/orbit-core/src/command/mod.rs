@@ -27,6 +27,7 @@ pub mod learning;
 pub mod learning_hook;
 pub mod pipeline_run;
 pub mod policy;
+pub mod search;
 pub mod semantic;
 pub mod skill;
 pub mod task;

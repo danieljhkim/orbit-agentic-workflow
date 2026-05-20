@@ -9,6 +9,7 @@ mod json;
 mod learning_tools;
 mod pipeline_tools;
 mod review_threads;
+mod search_tools;
 mod semantic_tools;
 mod state_tools;
 mod task_locks;

@@ -14,7 +14,7 @@ tags: ["project-learnings"]
 
 Project learnings is a system for preserving and surfacing non-obvious project knowledge — gotchas, root causes from incidents, validated approaches, hard-won workflow insights — at the moment of action so agents stop repeating the same mistakes. The system is **push-first**: relevant learnings inject into agent context automatically when an agent is about to touch code, files, or workflows the learning applies to. A pull surface exists for active exploration, but pull is the secondary mode.
 
-Phase 1 ships the native primitive (`learning` resource type alongside `task`), the push-injection mechanism, and the pull skill. Phase 2, deferred until [docs/design/semantic-search/](../semantic-search/) reaches Accepted, layers semantic-similarity ranking on top of the path-glob scoping that phase 1 uses.
+Phase 1 ships the native primitive (`learning` resource type alongside `task`), the push-injection mechanism, and the pull skill. Phase 2, deferred until [docs/design/orbit-search/](../orbit-search/) reaches Accepted, layers semantic-similarity ranking on top of the path-glob scoping that phase 1 uses.
 
 This document is the entry point. [2_design.md](./2_design.md) specifies the storage schema, injection pipeline, lifecycle, and surface; [3_vision.md](./3_vision.md) names open questions and prior art; [4_decisions.md](./4_decisions.md) is the ADR log.
 
@@ -75,9 +75,9 @@ Active learnings can be superseded (replaced by a newer entry) or marked stale (
 | Phase | Scope axis | Ranking | Discovery |
 |-------|-----------|---------|-----------|
 | **Phase 1** | path globs + tags | decay-weighted upvotes + manual priority + recency | engine pre-prompt + MCP injection + (optional) Claude Code hook |
-| **Phase 2** | + symbol-aware (knowledge graph) | + semantic similarity (semantic-search) | + relevance-ranked, not just match-based |
+| **Phase 2** | + symbol-aware (knowledge graph) | + semantic similarity (orbit-search) | + relevance-ranked, not just match-based |
 
-Phase 2 is gated on [docs/design/semantic-search/](../semantic-search/) reaching Accepted because the relevance-ranking layer wants real semantic similarity, and the symbol-aware scope wants the same graph integration semantic-search phase 2 will require.
+Phase 2 is gated on [docs/design/orbit-search/](../orbit-search/) reaching Accepted because the relevance-ranking layer wants real semantic similarity, and the symbol-aware scope wants the same graph integration orbit-search phase 2 will require.
 
 ---
 
@@ -98,7 +98,7 @@ Phase 2 is gated on [docs/design/semantic-search/](../semantic-search/) reaching
 | Native primitive vs flat markdown | [4_decisions.md ADR-002](./4_decisions.md) | [T20260510-11] |
 | Checked-in vs workspace-only state | [4_decisions.md ADR-003](./4_decisions.md) | [T20260510-11] |
 | Concerns & honest limitations | [2_design.md §8](./2_design.md) | [T20260510-11] |
-| Relationship to semantic-search | [3_vision.md §1.2](./3_vision.md), [docs/design/semantic-search/](../semantic-search/) | [T20260510-11] |
+| Relationship to orbit-search | [3_vision.md §1.2](./3_vision.md), [docs/design/orbit-search/](../orbit-search/) | [T20260510-11] |
 | Open questions, prior work | [3_vision.md](./3_vision.md) | [T20260510-11] |
 | ADR log | [4_decisions.md](./4_decisions.md) | [T20260510-11] |
 

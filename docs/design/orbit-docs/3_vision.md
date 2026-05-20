@@ -45,7 +45,7 @@ The author's current bias is toward path 2 — keep the lifecycles separate, but
 
 [ORB-00168] is filed but priority-low. With ~100 docs today, BM25-ish substring + tag-exact matches the corpus shape well: most queries are "find the doc about RAII" (exact concept name) rather than "find the doc that explains anything resembling X" (semantic similarity).
 
-The break-even point is roughly the size at which agents stop knowing the exact phrase they're looking for. Empirically, that's around 500 docs in our experience with similar systems, but the threshold is corpus-shape-dependent, not just count-dependent. A team that writes prose-heavy designs hits semantic-search payoff sooner than a team whose docs are mostly bullet lists and tables.
+The break-even point is roughly the size at which agents stop knowing the exact phrase they're looking for. Empirically, that's around 500 docs in our experience with similar systems, but the threshold is corpus-shape-dependent, not just count-dependent. A team that writes prose-heavy designs hits orbit-search payoff sooner than a team whose docs are mostly bullet lists and tables.
 
 The right trigger is *retrieval-quality complaint*: when agents start saying "I can't find the doc I know exists," that's the signal to land [ORB-00168]. Not before.
 
@@ -90,7 +90,7 @@ The boundary (rule-with-failure-mode vs. explanatory-context) is the load-bearin
 
 ### 2.3 Semantic search
 
-[docs/design/semantic-search/](../semantic-search/) covers the embeddings infrastructure that orbit-semantic uses for tasks. [ORB-00168] extends that infrastructure to cover docs. The model and vector store stay the same; the index is a sibling of the task index.
+[docs/design/orbit-search/](../orbit-search/) covers the embeddings infrastructure that orbit-search uses for tasks. [ORB-00168] extends that infrastructure to cover docs. The model and vector store stay the same; the index is a sibling of the task index.
 
 ### 2.4 Knowledge graph
 
@@ -143,7 +143,7 @@ The strict / tolerant split lets the corpus be queryable on day one (tolerant in
 - [4_decisions.md](./4_decisions.md) — accepted ADRs
 - [docs/design/project-learnings/](../project-learnings/) — sibling knowledge surface; rule-with-failure-mode shape
 - [docs/design/adr-artifact/](../adr-artifact/) — ADR surface; tool-managed lifecycle
-- [docs/design/semantic-search/](../semantic-search/) — embeddings infrastructure; v2 target for [ORB-00168]
+- [docs/design/orbit-search/](../orbit-search/) — embeddings infrastructure; v2 target for [ORB-00168]
 
 ### 4.2 External
 

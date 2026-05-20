@@ -27,7 +27,8 @@ Orbit tools are reachable via two surfaces. Both accept identical JSON arguments
 - Task lifecycle (`orbit.task.*`): both surfaces.
 - ADR artifacts (`orbit.adr.*`): both surfaces.
 - Graph read tools (`search`, `show`, `pack`, `callers`, `refs`, `implementors`, `deps`, `overview`, `history`): both surfaces.
-- Semantic read tools (`orbit.semantic.search`, `orbit.semantic.related`): both surfaces. Require the `orbit-search-companion` binary (`orbit semantic install`); calls fail with an install-pointer error otherwise.
+- Unified search (`orbit.search`): both surfaces. Lexical search works without setup; `semantic: true` and `related` require the search companion (`orbit semantic install`).
+- Semantic lifecycle tools (`orbit.semantic.install`, `orbit.semantic.uninstall`, `orbit.semantic.stats`, `orbit.semantic.index`): registered tool surface for managing the local embedding companion.
 - State handoff (`orbit.state.*`), graph writes, and duel/scoreboard tools: **CLI only** — used inside activity steps where the agent has shell access.
 
 **Always include `model` in the JSON** so Orbit can attribute the call to the right agent family. Here `model` means the canonical agent family: pass `codex`, `claude`, `gemini`, or `grok`. Full model strings are accepted and auto-normalized, but the family is the persisted identity.
@@ -52,8 +53,9 @@ orbit tool run orbit.task.show --input '{"id": "<id>", "field": "plan", "model":
 # Valid field values: comments, plan, execution_summary, description, acceptance_criteria, history, context_files, artifacts
 orbit tool run orbit.task.list --input '{"status": "backlog", "model": "<agent-family>"}'       # List by status
 orbit tool run orbit.task.search --input '{"query": "search text", "model": "<agent-family>"}'  # Lexical title/description substring match
-orbit tool run orbit.semantic.search --input '{"query": "topic phrase", "limit": 5, "model": "<agent-family>"}'  # Hybrid BM25 + cosine over indexed task fields (requires `orbit semantic install`)
-orbit tool run orbit.semantic.related --input '{"id": "<task-id>", "limit": 5, "model": "<agent-family>"}'        # Cosine neighbors of an indexed task
+orbit tool run orbit.search --input '{"query": "topic phrase", "limit": 5, "model": "<agent-family>"}'  # Lexical global search across tasks, docs, learnings, and ADRs
+orbit tool run orbit.search --input '{"query": "topic phrase", "semantic": true, "kind": "task", "limit": 5, "model": "<agent-family>"}'  # Hybrid BM25 + cosine over indexed task fields
+orbit tool run orbit.search --input '{"related": "<task-id>", "limit": 5, "model": "<agent-family>"}'        # Cosine neighbors of an indexed task
 orbit tool run orbit.task.add --input '{"title": "...", "description": "...", "acceptance_criteria": ["..."], "workspace": ".", "model": "<agent-family>"}'
 orbit tool run orbit.task.update --input '{"id": "<id>", "plan": "...", "model": "<agent-family>"}'
 orbit tool run orbit.task.start --input '{"id": "<id>", "note": "...", "model": "<agent-family>"}' # backlog -> in-progress
@@ -111,7 +113,7 @@ Command surface determines provenance by default:
 - `orbit-learning`: Author, search, update, supersede, and prune project learnings through `orbit.learning.*`. Use to preserve recurring gotchas, incident root-causes, and cross-session guidance.
 - `orbit-track-issues`: Capture agent-discovered, self-reported friction as append-only reports.
 - `orbit-graph`: Navigate or inspect the codebase via the knowledge graph when the activity allowlist includes graph tools.
-- `orbit-semantic`: Find tasks by topic — pre-create dedup checks, related-task lookups, "didn't we have a task about X?" queries. Complementary to `orbit-graph` (code structure vs task content).
+- `orbit-search`: Find tasks, docs, learnings, and ADRs by topic; covers pre-create dedup checks and related-task lookups. Complementary to `orbit-graph` (corpus retrieval vs code structure).
 - `orbit-guide`: First-time onboarding when `.orbit/` is absent, or feature-tour requests ("what is orbit", "give me a tour"). Walks setup paths and hands off to `orbit-create-task`.
 
 ## Voice Your Opinion

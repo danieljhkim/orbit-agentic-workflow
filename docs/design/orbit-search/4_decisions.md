@@ -3,16 +3,16 @@ summary: "Semantic Search — Decisions"
 type: design
 title: "Semantic Search — Decisions"
 owner: claude
-last_updated: 2026-05-17
+last_updated: 2026-05-20
 status: Accepted
-feature: semantic-search
+feature: orbit-search
 doc_role: decisions
-tags: ["semantic-search"]
+tags: ["orbit-search"]
 ---
 
 # Semantic Search — Decisions
 
-ADR-style log of non-obvious semantic-search decisions. Each entry names the pressure, the choice, and the tradeoff. Entries are append-only and keyed by number; superseded entries are marked, not deleted.
+ADR-style log of non-obvious orbit-search decisions. Each entry names the pressure, the choice, and the tradeoff. Entries are append-only and keyed by number; superseded entries are marked, not deleted.
 
 Format for each entry: **Status · Date · Task(s)**, then *Context → Decision → Consequences*. Every ADR names at least one cost. ADRs in this file carry status `Proposed` until the implementing task ships; they flip to `Accepted` with the implementing task ID at that point.
 
@@ -137,7 +137,7 @@ Option A is what the design originally called "single binary install posture pre
 - Default `orbit` install stays slim — no ORT, no fastembed-rs in the main binary. Users who don't want semantic search pay no cost.
 - The model menu is exposed at install time, not as a runtime config knob the user has to discover. Users actively choose between MiniLM-L6 (smallest, ~23MB), BGE-small (default, ~30MB), and Nomic-v1.5 (largest, ~140MB) at the moment they're committing to the feature.
 - The subprocess-RPC boundary makes the companion swappable: a future `orbit-embed-companion-candle` could reuse the same RPC protocol with a different inference engine.
-- Cost: install becomes a two-step user action (`orbit` install, then `orbit semantic install`). Users hitting `orbit semantic search` without the companion installed need a clean, helpful error. The subprocess introduces ~100–300ms ORT cold-start latency per process; mitigated by reusing the subprocess across batches but still visible on first interactive query. Additionally, the companion binary requires a per-platform release pipeline (Linux x86_64, Linux arm64, macOS x86_64, macOS arm64, Windows x86_64), which is real release-engineering work for follow-up tasks.
+- Cost: install becomes a two-step user action (`orbit` install, then `orbit semantic install`). Users hitting `orbit search` without the companion installed need a clean, helpful error. The subprocess introduces ~100–300ms ORT cold-start latency per process; mitigated by reusing the subprocess across batches but still visible on first interactive query. Additionally, the companion binary requires a per-platform release pipeline (Linux x86_64, Linux arm64, macOS x86_64, macOS arm64, Windows x86_64), which is real release-engineering work for follow-up tasks.
 
 ---
 
@@ -151,7 +151,7 @@ Option A is what the design originally called "single binary install posture pre
 
 **Consequences.**
 - Task-derived vectors and FTS rows follow task scoping: one workspace cannot see another workspace's semantic index.
-- `orbit semantic reindex` can rebuild only the active workspace without filtering a global table by workspace ID.
+- `orbit semantic index` can rebuild only the active workspace without filtering a global table by workspace ID.
 - Tests use `VectorStore::open_in_memory()` directly — no orbit-store handle to plumb through.
 - `semantic.db` carries only the embeddings/FTS5 schema. Earlier phase-1 implementations co-located the generic `orbit-store` migration bundle in the same file (audit, tools, reservations, etc.); that collateral was removed when ADR-007 cut the `orbit-embed → orbit-store` dependency.
 
@@ -168,7 +168,7 @@ Option A is what the design originally called "single binary install posture pre
 
 Compare to the analogous knowledge-graph crate: `orbit-knowledge` owns its data + commands in `commands/{search,show,overview,…}.rs` and `orbit-core/src/command/graph.rs` is a six-line re-export. Phase-1 semantic search was three-crate-spread; the graph feature is one-crate-plus-thin-re-export.
 
-**Decision.** Relocate semantic-search ownership into `orbit-embed` and make it self-contained:
+**Decision.** Relocate orbit-search ownership into `orbit-embed` and make it self-contained:
 
 - Move the vector storage module to `crates/orbit-embed/src/vector/mod.rs`. `orbit-store` drops its dependency on `orbit-embed`. **`orbit-embed` does not depend on `orbit-store`**: it owns its own SQLite handle directly via `rusqlite::Connection` wrapped in `Arc<Mutex<_>>`, applies WAL + busy_timeout pragmas, and runs `ensure_vector_schema` on `VectorStore::open(path)` / `VectorStore::open_in_memory()`. This mirrors how `orbit-knowledge` owns `graph_index.sqlite` end-to-end without going through `orbit-store`.
 - Move the per-command logic to `crates/orbit-embed/src/commands/{install,uninstall,reindex,stats}.rs`. Each command file owns its `*Params` and `*Result` types and one public `run` function. `crates/orbit-embed/src/commands/mod.rs` aggregates the surface and holds shared helpers (`parse_model`, `active_model`, `remove_file_if_exists`, `DEFAULT_RELEASE_BASE_URL`).
@@ -195,8 +195,25 @@ Compare to the analogous knowledge-graph crate: `orbit-knowledge` owns its data 
 **Consequences.**
 - Re-running `orbit semantic install` after upgrading Orbit naturally refreshes stale companions without requiring users to uninstall first.
 - Task mutation output stays trustworthy: background indexing remains best-effort and cannot leak companion stderr into successful `task.add` / `task.update` command output.
-- Direct commands such as `orbit semantic search`, `related`, and `reindex` still show actionable companion stderr because they use the inherited-stderr path.
+- Direct commands such as `orbit search --semantic`, `orbit search --related`, and `orbit semantic index` still show actionable companion stderr because they use the inherited-stderr path.
 - Cost: install now trusts the companion's `--version-info` protocol. If a broken companion cannot answer the probe, Orbit conservatively replaces it, which can redownload or recopy the binary even when the file might have been usable for embeddings.
+
+---
+
+## ADR-0174 — Split lifecycle and query search namespaces
+
+**Status:** Accepted · 2026-05-20 · [ORB-00196]
+
+**Context.** `orbit semantic` mixed embedding-companion lifecycle (`install`, `uninstall`, `stats`, `index`) with user query verbs (`search`, `related`). The phase-1 search engine now owns both lexical and vector ranking, so leaving queries under `semantic` would make users choose an implementation detail before they search.
+
+**Decision.** `orbit semantic` is only the lifecycle namespace for the local embedding companion. `orbit search` is the unified query surface; lexical ranking is the default, `--semantic` opts into hybrid BM25 plus cosine for task vectors, and `--related <id>` performs cosine-neighbor lookup for indexed tasks.
+
+**Consequences.**
+- Establishes a precedent that lifecycle namespaces manage local subsystems while query namespaces describe what users are trying to do.
+- `orbit semantic search`, `orbit semantic related`, and `orbit semantic reindex` are hard breaks with no shim because there are no known external consumers yet.
+- Per-domain search commands stay untouched for phase 1; a later task decides whether they thin-wrap `orbit search`, demote to filters, or retire.
+- Vector index coverage remains task-only today; docs, learnings, and ADRs continue to use lexical matching even when `--semantic` is set.
+- Cost: historical audit event names `semantic.search` and `semantic.related` become orphaned event types, accepted because no external audit-history consumers exist yet.
 
 ---
 
@@ -204,7 +221,8 @@ Compare to the analogous knowledge-graph crate: `orbit-knowledge` owns its data 
 
 - [T20260510-3] — Design semantic search over task artifacts and graph (v2). The task that produced this folder.
 - [T20260510-9] — Phase-1 semantic search foundation: orbit-embed + orbit-embed-companion + indexing pipeline. The task that accepted and implemented ADR-001 through ADR-006.
-- [T20260510-20] — Refactor: relocate semantic-search ownership to orbit-embed (vector store + commands). The task that accepted and implemented ADR-007.
+- [T20260510-20] — Refactor: relocate orbit-search ownership to orbit-embed (vector store + commands). The task that accepted and implemented ADR-007.
 - [T20260510-26] — Make semantic companion install/update quiet and version-aware. The task that accepted and implemented ADR-008.
+- [ORB-00196] — Split `orbit semantic` lifecycle from the unified `orbit search` query surface. The task that accepted and implemented ADR-0174.
 
 Resolve any task above with `orbit task show <ID>` or `git log --grep=<ID>`.
