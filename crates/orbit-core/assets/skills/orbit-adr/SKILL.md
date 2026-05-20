@@ -9,7 +9,7 @@ description: Use this whenever an Architecture Decision Record is being created,
 
 Create and maintain Orbit ADR artifacts through the registered tool surface. ADRs record decisions, not implementation plans: use them when a choice has a real alternative, constrains future work, and carries a non-trivial cost.
 
-ADRs and orbit-docs are sibling indexes by design. ADRs keep their stricter lifecycle and dedicated allocation through `orbit.adr.*`; `orbit docs search` surfaces ADR metadata read-only alongside doc results. For the boundary rationale, run `orbit tool run orbit.adr.list --input '{"feature":"orbit-adr"}'` and inspect the accepted ADR covering the sibling-index search overlay.
+ADRs and orbit-docs are sibling indexes by design. ADRs keep their stricter lifecycle and dedicated allocation through `orbit.adr.*`; `orbit search --kind all` (and `--kind adr`) surfaces ADR metadata read-only alongside doc results. For the boundary rationale, run `orbit tool run orbit.adr.list --input '{"feature":"orbit-adr"}'` and inspect the accepted ADR covering the sibling-index search overlay.
 
 ## Tool Invocation
 

@@ -64,7 +64,7 @@ Cap injection at 3–5 learnings per call and dedupe per session to keep context
 
 ### 2.3 Pull surface
 
-For active exploration ("what should I know about this crate before I start?"), an `orbit-learnings` skill wraps `orbit.learning.search` with a natural-language interface. Agents can also call the tool directly. Pull is a complement to push, not the primary path; the push layer exists precisely because pull alone has been observed to fail.
+For active exploration ("what should I know about this crate before I start?"), an `orbit-learnings` skill wraps `orbit.search` (with `kind: learning`) with a natural-language interface. Agents can also call the tool directly. Pull is a complement to push, not the primary path; the push layer exists precisely because pull alone has been observed to fail.
 
 ### 2.4 Curation lifecycle
 

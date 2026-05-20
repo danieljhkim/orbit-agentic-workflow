@@ -1,7 +1,7 @@
 ---
 title: "Orbit Docs — Design"
 owner: claude
-last_updated: 2026-05-19
+last_updated: 2026-05-20
 status: Draft
 feature: orbit-docs
 doc_role: design
@@ -46,11 +46,11 @@ The tolerant indexer infers `type` from directory layout when the field is absen
 
 Non-empty single line. The parser trims trailing whitespace, then errors if either (a) the value is empty after trim, or (b) the value spans more than one line. Multi-line scalars are not supported by the strict parser.
 
-`summary` is the primary retrieval hook. `orbit docs search` scores against `summary` substring matches with the highest single-field weight (see §5.2). The expectation is that authors write `summary` as an *agent-readable retrieval cue*, not a doc title: it should answer "if an agent searched for the concept this doc covers, what phrase would they search?"
+`summary` is the primary retrieval hook. `orbit search --kind doc` scores against `summary` substring matches with the highest single-field weight (see §5.2). The expectation is that authors write `summary` as an *agent-readable retrieval cue*, not a doc title: it should answer "if an agent searched for the concept this doc covers, what phrase would they search?"
 
 ### 1.3 `tags` (optional)
 
-Free-form string list. Used for `--tag` filtering in `orbit docs list` and as an exact-match scoring signal in `orbit docs search`. There is no controlled vocabulary; teams are free to converge on their own tagging conventions.
+Free-form string list. Used for `--tag` filtering in `orbit docs list` and as an exact-match scoring signal in `orbit search --kind doc`. There is no controlled vocabulary; teams are free to converge on their own tagging conventions.
 
 The tolerant indexer populates `tags` with the feature slug for design docs (e.g. `tags: [activity-job]` for `docs/design/activity-job/...`).
 
@@ -58,7 +58,7 @@ The tolerant indexer populates `tags` with the feature slug for design docs (e.g
 
 Glob string list. Names file paths the doc applies to. This is the join key for hook-time scoping ([ORB-00167]): when an agent is about to Edit / Read / Write a file, the hook can surface docs whose `paths` glob matches.
 
-Not used by `orbit docs search` ranking in v1; the field exists for the injection wiring.
+Not used by `orbit search --kind doc` ranking in v1; the field exists for the injection wiring.
 
 ### 1.5 `related_features` (optional)
 
@@ -168,7 +168,7 @@ Records are sorted by repo-relative path before deduplication. `orbit docs list 
 
 ## 5. Search
 
-`orbit docs search <query> [--limit N]` ranks docs by substring and exact-match scoring across `summary`, `tags`, and `type`.
+`orbit search --kind doc <query> [--limit N]` ranks docs by substring and exact-match scoring across `summary`, `tags`, and `type`.
 
 ### 5.1 Scoring
 
@@ -183,7 +183,7 @@ A record with zero hits is dropped. Ties are broken by path order (deterministic
 
 ### 5.2 Why these weights
 
-Exact tag match is the strongest signal because authors writing tags are committing to a categorization. Summary substring is next because authors write `summary` knowing it's the retrieval hook. Type contributes weakly so that `orbit docs search runbook` surfaces runbooks above pattern docs that incidentally mention "runbook" in their summary.
+Exact tag match is the strongest signal because authors writing tags are committing to a categorization. Summary substring is next because authors write `summary` knowing it's the retrieval hook. Type contributes weakly so that `orbit search --kind doc runbook` surfaces runbooks above pattern docs that incidentally mention "runbook" in their summary.
 
 ### 5.3 Limit and default
 
@@ -211,7 +211,7 @@ Reads the named repo-relative path, parses tolerantly, returns the parsed frontm
 
 JSON shape: `{ "path", "frontmatter", "body" }`.
 
-### 6.3 `orbit docs search <query>`
+### 6.3 `orbit search --kind doc <query>`
 
 See §5. Returns the ranked list with `score` and `matched_by` (list of which fields hit).
 
@@ -238,18 +238,17 @@ The line-based YAML editing is fragile against multi-line / quoted values — [O
 
 ## 7. MCP Surface
 
-Six tools, registered in `safe_mcp_tool_names` ([crates/orbit-cli/src/command/mcp/mod.rs](../../../crates/orbit-cli/src/command/mcp/mod.rs)):
+Five tools, registered in `safe_mcp_tool_names` ([crates/orbit-cli/src/command/mcp/mod.rs](../../../crates/orbit-cli/src/command/mcp/mod.rs)):
 
 ```
 orbit.docs.list
 orbit.docs.show
-orbit.docs.search
 orbit.docs.add
 orbit.docs.reindex
 orbit.docs.migrate
 ```
 
-Each tool's `execute` forwards to `OrbitBuiltinAction::Docs*` and routes through the same `OrbitRuntime` methods the CLI uses. CLI and MCP shapes are identical. Audit events for MCP invocations land in the same SQLite store as CLI events, tagged `subcommand: "run-mcp"`.
+The per-domain doc-search MCP tool was retired by [ORB-00202]; content-similarity queries now route through the unified `orbit.search` tool with `kind: "doc"`. Each remaining tool's `execute` forwards to `OrbitBuiltinAction::Docs*` and routes through the same `OrbitRuntime` methods the CLI uses. CLI and MCP shapes are identical. Audit events for MCP invocations land in the same SQLite store as CLI events, tagged `subcommand: "run-mcp"`.
 
 ---
 

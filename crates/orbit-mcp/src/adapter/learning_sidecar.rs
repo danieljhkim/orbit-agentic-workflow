@@ -208,16 +208,18 @@ fn search_learning_reminders(
     paths: &[String],
     caps: LearningInjectionCaps,
 ) -> Result<Vec<LearningReminder>, OrbitError> {
+    // ORB-00202: per-domain `orbit.learning.search` was retired; the
+    // applicability lookup re-homed onto `orbit.learning.list` with glob-
+    // containment `path` semantics.
     let mut by_id: BTreeMap<String, ReminderCandidate> = BTreeMap::new();
     for path in paths {
         let value = host.call_tool(
-            "orbit.learning.search",
+            "orbit.learning.list",
             json!({
                 "path": path,
-                "limit": caps.per_call,
             }),
         )?;
-        for candidate in parse_learning_search_candidates(&value) {
+        for candidate in parse_learning_list_candidates(&value) {
             by_id
                 .entry(candidate.reminder.id.clone())
                 .or_insert(candidate);
@@ -237,7 +239,7 @@ fn search_learning_reminders(
         .collect())
 }
 
-fn parse_learning_search_candidates(value: &Value) -> Vec<ReminderCandidate> {
+fn parse_learning_list_candidates(value: &Value) -> Vec<ReminderCandidate> {
     let items = value
         .as_array()
         .or_else(|| value.get("items").and_then(Value::as_array))

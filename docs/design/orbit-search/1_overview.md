@@ -22,7 +22,7 @@ This document is the entry point. [2_design.md](./2_design.md) specifies the inf
 
 The task store is already growing past the point where lexical recall is sufficient. Three concrete failure modes exist today:
 
-1. **Duplicate tasks.** Agents create new tasks for problems that have already been worked on because `orbit task search` only matches literal substrings of titles and descriptions. A task titled "embed model latency degraded after Nomic swap" is invisible to a query for "slow inference."
+1. **Duplicate tasks.** Agents create new tasks for problems that have already been worked on because the historical per-domain `task search` subcommand of `orbit` (now retired in favor of `orbit search --kind task`) only matched literal substrings of titles and descriptions. A task titled "embed model latency degraded after Nomic swap" is invisible to a query for "slow inference."
 2. **Lost prior work.** A human asks "didn't we have a task about token-counting heuristics?" and gets nothing because the original task used the phrase "context window estimation." The information is on disk, just not findable.
 3. **Review-thread context loss.** Long-lived review threads accumulate decisions in comment bodies. Those decisions are unsearchable except by full text scan.
 

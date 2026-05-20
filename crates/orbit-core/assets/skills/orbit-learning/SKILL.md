@@ -18,8 +18,8 @@ Both surfaces accept the same JSON. Use the CLI examples when shell access is av
 | Tool | MCP | CLI |
 |------|-----|-----|
 | `orbit.learning.add` | `orbit_learning_add({...})` | `orbit learning add --summary "..." --path "crates/orbit-core/**/*.rs" --tag rust --body-file note.md` |
-| `orbit.learning.list` | `orbit_learning_list({...})` | `orbit learning list --status active --tag rust` |
-| `orbit.learning.search` | `orbit_learning_search({...})` | `orbit learning search --path crates/orbit-core/src/lib.rs` |
+| `orbit.learning.list` | `orbit_learning_list({...})` | `orbit learning list --status active --tag rust` (also `--path <glob-or-file>`) |
+| `orbit.search` | `orbit_search({...})` | `orbit search --kind learning <text>` (free-text content match) |
 | `orbit.learning.show` | `orbit_learning_show({...})` | `orbit learning show --id L-0001` |
 | `orbit.learning.comment.add` | `orbit_learning_comment_add({...})` | `orbit learning comment add --learning-id L-0001 --body "Narrow note" --model codex` |
 | `orbit.learning.comment.list` | `orbit_learning_comment_list({...})` | `orbit learning comment list --learning-id L-0001` |
@@ -36,9 +36,9 @@ Run `orbit tool list | grep orbit.learning` if you suspect the local tool surfac
 ## Workflow
 
 1. **Search before adding.** Before creating a new learning, check whether one already covers the same scope:
-   - `orbit learning search --path <path-you-care-about>` for path-anchored guidance.
-   - `orbit learning search --tag <tag>` for cross-cutting topics.
-   - `orbit learning search --query <substring>` for substring match against `summary` (case-insensitive).
+   - `orbit learning list --path <path-you-care-about>` for path-anchored guidance (glob-containment).
+   - `orbit learning list --tag <tag>` for cross-cutting topics.
+   - `orbit search --kind learning <substring>` for content match against `summary` and body (case-insensitive).
    If a near-match exists, prefer `update` (refine the existing record) or `supersede` (replace it with a new ID) over creating a duplicate.
 
 2. **Add with tight scope.** A learning is only useful when its `scope` triggers the right injections — not too broad (noise) and not too narrow (never fires). `scope: { paths?, tags? }` matches as **paths OR tags** (a record fires when *any* path glob OR *any* tag hits). Include `evidence: [{ kind: "task"|"commit"|"external", ref: "..." }]` whenever the learning came from a real incident, PR, or task — future readers (and prune logic) lean on it. Use `priority` (0–255) sparingly; it is the secondary search ranking key, not a "this is important" badge.
@@ -99,7 +99,7 @@ orbit learning add \
 Find what would inject for a specific file:
 
 ```bash
-orbit learning search --path crates/orbit-cli/src/command/learning/add.rs
+orbit learning list --path crates/orbit-cli/src/command/learning/add.rs
 ```
 
 Attach a brief observation to an existing active learning:
@@ -133,7 +133,7 @@ orbit learning prune --stale-only
 | Hand-writing `.orbit/learnings/<id>/learning.yaml` | Skips envelope index update and audit attribution | Use `orbit.learning.add` / `update` / `supersede` |
 | Editing a comment in place | Comments are append-only audit records | Delete the old comment and add a corrected one |
 | Commenting on a superseded learning | Superseded wording is retired from push-injection | Add the comment to the active replacement, or supersede again for content changes |
-| Creating a duplicate without `search` first | Two records with overlapping scope inject twice and contradict each other | `orbit learning search --path/--tag` before `add` |
+| Creating a duplicate without checking first | Two records with overlapping scope inject twice and contradict each other | `orbit learning list --path/--tag` (and `orbit search --kind learning`) before `add` |
 | `update` to "fix" a fundamental change in advice | Loses the supersede chain; readers cannot see the old guidance was reversed | `orbit learning supersede --id <old> --with <new>` |
 | Calling `update` on a superseded record | Tool rejects with a typed error | `supersede` from the head of the chain instead |
 | `scope` with no `paths` and no `tags` | Never injects — record is invisible to push | Include at least one `path` glob or one `tag` |

@@ -52,7 +52,8 @@ orbit tool run orbit.task.show --input '{"id": "<id>", "field": "comments", "mod
 orbit tool run orbit.task.show --input '{"id": "<id>", "field": "plan", "model": "<agent-family>"}'         # Load only plan
 # Valid field values: comments, plan, execution_summary, description, acceptance_criteria, history, context_files, artifacts
 orbit tool run orbit.task.list --input '{"status": "backlog", "model": "<agent-family>"}'       # List by status
-orbit tool run orbit.task.search --input '{"query": "search text", "model": "<agent-family>"}'  # Lexical title/description substring match
+orbit tool run orbit.task.list --input '{"path": "src/auth/login.rs", "model": "<agent-family>"}'  # List tasks whose context_files apply to this path
+orbit tool run orbit.search --input '{"query": "topic phrase", "kind": "task", "limit": 5, "model": "<agent-family>"}'  # Lexical search restricted to tasks
 orbit tool run orbit.search --input '{"query": "topic phrase", "limit": 5, "model": "<agent-family>"}'  # Lexical global search across tasks, docs, learnings, and ADRs
 orbit tool run orbit.search --input '{"query": "topic phrase", "hybrid": true, "kind": "task", "limit": 5, "model": "<agent-family>"}'  # Hybrid BM25 + cosine over indexed task fields
 orbit tool run orbit.search --input '{"semantic": "<task-id>", "limit": 5, "model": "<agent-family>"}'        # Cosine neighbors of an indexed task

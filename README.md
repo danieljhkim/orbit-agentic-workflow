@@ -207,8 +207,7 @@ Two install surfaces. The CLI gives you the full power of Orbit. Choose the plug
 | **task** | `orbit.task.add` | Create a new task |
 | | `orbit.task.update` | Mutate task fields (status, plan, acceptance criteria) |
 | | `orbit.task.show` | Fetch full task detail |
-| | `orbit.task.list` | List tasks filtered by status / scope |
-| | `orbit.task.search` | Search tasks by text or metadata |
+| | `orbit.task.list` | List tasks filtered by status / scope / `path` |
 | | `orbit.task.start` | Transition into in-progress |
 | | `orbit.task.artifact.put` | Attach a generated artifact to a task |
 | **review** | `orbit.task.review_thread.add` | Open a review thread on a task |
@@ -224,7 +223,7 @@ Two install surfaces. The CLI gives you the full power of Orbit. Choose the plug
 | | `orbit.graph.refs` | List references to a symbol |
 | | `orbit.graph.history` | Git history for a symbol |
 | | `orbit.graph.pack` | Bundle a connected slice of the graph for a prompt |
-| **search** | `orbit.search` | Search tasks, docs, learnings, and ADRs; `semantic=true` opts task results into hybrid embedding + BM25 ranking |
+| **search** | `orbit.search` | Unified search across tasks, docs, learnings, and ADRs. `kind` narrows the corpus; `hybrid: true` opts task results into BM25 + cosine ranking; `semantic: "<task-id>"` returns cosine neighbors. Cross-kind filters: `tag` (AND), `all` (kind-aware status widener), `status` (explicit set), `path` (selector-mapping for tasks, glob-containment for learnings; ADR/doc no-op until phase 3). |
 | **semantic** | `orbit.semantic.install` | Install the local embedding companion and model |
 | | `orbit.semantic.uninstall` | Remove the embedding companion and/or models |
 | | `orbit.semantic.stats` | Show companion and index status |
@@ -241,8 +240,7 @@ Two install surfaces. The CLI gives you the full power of Orbit. Choose the plug
 | **learning** | `orbit.learning.add` | Author a project learning |
 | | `orbit.learning.update` | Edit a learning |
 | | `orbit.learning.show` | Fetch a learning |
-| | `orbit.learning.list` | List learnings by tag / scope |
-| | `orbit.learning.search` | Search learnings by path, tag, or text |
+| | `orbit.learning.list` | List learnings by tag / scope / `path` (glob-containment) |
 | | `orbit.learning.supersede` | Mark a learning superseded |
 | | `orbit.learning.prune` | Report or archive stale learnings |
 | | `orbit.learning.reindex` | Rebuild the SQLite envelope index from YAML |

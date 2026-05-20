@@ -1,7 +1,7 @@
 ---
 title: "Orbit Docs — Vision"
 owner: claude
-last_updated: 2026-05-19
+last_updated: 2026-05-20
 status: Draft
 feature: orbit-docs
 doc_role: vision
@@ -36,7 +36,7 @@ The third condition — explicit team agreement — is what makes this an open q
 [ORB-00169] is the design task. Three paths are named:
 
 1. **Fold completely.** orbit-docs indexes `.orbit/adrs/` by translating `adr.yaml` to orbit-docs frontmatter at index time. ADR storage stays put. Single search surface; orbit-docs gains complexity for a corpus with a stricter lifecycle than it understands.
-2. **Sibling indexes, unified search verb.** ADRs stay where they are with their own surface. A new `orbit docs search --include-adrs` or unified `orbit search` queries both. Clean separation; another surface to maintain.
+2. **Sibling indexes, unified search verb.** ADRs stay where they are with their own surface. The unified `orbit search` surface that landed in [ORB-00196] / [ORB-00202] already queries both via `--kind doc`, `--kind adr`, or `--kind all`. Clean separation; another surface to maintain.
 3. **Status quo.** Skills document the boundary clearly and nudge agents to query both for design context. Zero new code; agents won't reliably query both.
 
 The author's current bias is toward path 2 — keep the lifecycles separate, but provide a single retrieval entry point. But the choice should be made by [ORB-00169], not pre-committed here.
