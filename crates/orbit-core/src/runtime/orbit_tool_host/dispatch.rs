@@ -24,9 +24,6 @@ pub(super) fn execute(
         OrbitBuiltinAction::AdrSupersede => {
             super::adr_tools::supersede(runtime, input, agent, model)
         }
-        OrbitBuiltinAction::DesignInit => super::design_tools::init(runtime, input, agent, model),
-        OrbitBuiltinAction::DesignList => super::design_tools::list(runtime, input),
-        OrbitBuiltinAction::DesignShow => super::design_tools::show(runtime, input),
         OrbitBuiltinAction::DocsList => super::docs_tools::list(runtime, input),
         OrbitBuiltinAction::DocsShow => super::docs_tools::show(runtime, input),
         OrbitBuiltinAction::DocsSearch => super::docs_tools::search(runtime, input),
