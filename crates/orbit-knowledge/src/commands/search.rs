@@ -1,13 +1,13 @@
 use regex::Regex;
 
-use crate::commands::GraphCommandContext;
+use crate::commands::{GraphCommandContext, fuzzy};
 use crate::graph::navigator::GraphNodeRef;
 use crate::graph::{GraphIndexSearchRow, GraphReadOptions};
 use crate::service::{GraphContextService, MatchedLine, SearchHit};
 use crate::{KnowledgeError, graph::nodes::CodebaseGraphV1};
 
 const DEFAULT_RANKING_HEADROOM: usize = 10;
-const DEFAULT_RANKING_HARD_CAP: usize = 5_000;
+pub(crate) const DEFAULT_RANKING_HARD_CAP: usize = 5_000;
 pub const SOURCE_REGEX_UNBOUNDED_LIMIT_MAX: usize = 200;
 
 #[derive(Debug, Clone)]
@@ -19,6 +19,7 @@ pub struct SearchInput {
     pub prefix: Option<String>,
     pub source_regex: Option<Regex>,
     pub include_non_code: bool,
+    pub allow_fuzzy: bool,
     pub limit: usize,
 }
 
@@ -30,24 +31,27 @@ pub struct DefaultSearchInput<'a> {
     pub include_non_code: bool,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct SearchResult {
     pub total: usize,
     pub hits: Vec<SearchResultItem>,
     pub used_index: bool,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct SearchResultItem {
     pub selector: String,
     pub name: String,
     pub kind: String,
     pub file: Option<String>,
     pub matched_lines: Vec<MatchedLine>,
+    pub match_kind: Option<String>,
+    pub score: Option<f32>,
 }
 
 pub fn run(input: SearchInput) -> Result<SearchResult, KnowledgeError> {
     let has_source_regex = input.source_regex.is_some();
+    let allow_fuzzy = input.allow_fuzzy && !has_source_regex && !input.query.trim().is_empty();
     let use_default_ranking = input.node_type.is_none()
         && input.kind_filter.is_none()
         && input.prefix.is_none()
@@ -61,7 +65,7 @@ pub fn run(input: SearchInput) -> Result<SearchResult, KnowledgeError> {
             input.limit,
         )?
     {
-        return Ok(result);
+        return maybe_fuzzy_fallback(&input, result, allow_fuzzy, None);
     }
 
     let graph = input.context.read_graph(GraphReadOptions {
@@ -119,11 +123,12 @@ pub fn run(input: SearchInput) -> Result<SearchResult, KnowledgeError> {
             .take(input.limit)
             .map(|node| search_item_for_node(&svc, node, Vec::new()))
             .collect();
-        Ok(SearchResult {
+        let result = SearchResult {
             total,
             hits,
             used_index: false,
-        })
+        };
+        maybe_fuzzy_fallback(&input, result, allow_fuzzy, Some(&graph))
     } else {
         let hits = if use_exact_symbol_definition_ranking {
             rank_exact_symbol_definition_hits(hits, &input.query)
@@ -133,15 +138,58 @@ pub fn run(input: SearchInput) -> Result<SearchResult, KnowledgeError> {
         } else {
             hits
         };
-        Ok(SearchResult {
+        let result = SearchResult {
             total: service_total,
             hits: hits
                 .into_iter()
                 .map(|hit| search_item_for_hit(&svc, hit))
                 .collect(),
             used_index: false,
-        })
+        };
+        maybe_fuzzy_fallback(&input, result, allow_fuzzy, Some(&graph))
     }
+}
+
+fn maybe_fuzzy_fallback(
+    input: &SearchInput,
+    result: SearchResult,
+    allow_fuzzy: bool,
+    graph: Option<&CodebaseGraphV1>,
+) -> Result<SearchResult, KnowledgeError> {
+    if !allow_fuzzy || result.total != 0 {
+        return Ok(result);
+    }
+
+    let owned_graph;
+    let graph = if let Some(graph) = graph {
+        graph
+    } else {
+        owned_graph = input.context.read_graph(GraphReadOptions {
+            hydrate_file_source: false,
+            hydrate_leaf_source: false,
+        })?;
+        &owned_graph
+    };
+
+    let hits = fuzzy::fuzzy_name_candidates(graph, &input.query, input.limit)
+        .into_iter()
+        .map(|candidate| SearchResultItem {
+            selector: candidate.selector,
+            name: candidate.name,
+            kind: candidate.kind,
+            file: candidate.file,
+            matched_lines: Vec::new(),
+            match_kind: Some("fuzzy".to_string()),
+            score: Some(candidate.score),
+        })
+        .collect::<Vec<_>>();
+    let total = hits.len();
+
+    Ok(SearchResult {
+        total,
+        hits,
+        used_index: false,
+    })
 }
 
 pub fn default_search(input: DefaultSearchInput<'_>) -> Result<SearchResult, KnowledgeError> {
@@ -228,6 +276,8 @@ fn search_item_for_node(
         kind,
         file,
         matched_lines,
+        match_kind: None,
+        score: None,
     }
 }
 
@@ -241,6 +291,8 @@ fn search_item_for_row(row: GraphIndexSearchRow) -> SearchResultItem {
         kind,
         file,
         matched_lines: Vec::new(),
+        match_kind: None,
+        score: None,
     }
 }
 
@@ -464,11 +516,12 @@ fn is_non_code_path(path: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
+    use crate::commands::{GraphCommandContext, TaskGraphScope};
     use crate::graph::GraphIndexReader;
     use crate::graph::nodes::{
         BaseNodeFields, CodebaseGraphV1, DirNode, FileNode, LeafKind, LeafNode,
     };
-    use crate::graph::object_store::GraphObjectStore;
+    use crate::graph::object_store::{GraphObjectStore, RefName};
     use crate::service::GraphContextService;
 
     use super::*;
@@ -711,6 +764,78 @@ mod tests {
         );
     }
 
+    #[test]
+    fn fuzzy_pass_returns_orbit_error_for_orbit_erorr_query() {
+        let graph = graph_with_named_leaves(&[("OrbitError", LeafKind::Struct)]);
+        let (_temp_dir, context) = context_for_graph(&graph);
+
+        let result =
+            run(search_input(context, "OrbitErorr", true, 5)).expect("fuzzy search result");
+
+        assert_eq!(result.hits.len(), 1);
+        assert_eq!(result.hits[0].name, "OrbitError");
+        assert_eq!(result.hits[0].match_kind.as_deref(), Some("fuzzy"));
+        let score = result.hits[0].score.expect("fuzzy score");
+        assert!(score > 0.0);
+        assert!(score <= 1.0);
+    }
+
+    #[test]
+    fn exact_match_suppresses_fuzzy_candidates() {
+        let graph = graph_with_named_leaves(&[
+            ("OrbitError", LeafKind::Struct),
+            ("OrbitErrorKind", LeafKind::Enum),
+        ]);
+        let (_temp_dir, context) = context_for_graph(&graph);
+
+        let result =
+            run(search_input(context, "OrbitError", true, 5)).expect("exact search result");
+
+        assert!(!result.hits.is_empty());
+        assert!(result.hits.iter().all(|hit| hit.match_kind.is_none()));
+    }
+
+    #[test]
+    fn allow_fuzzy_false_preserves_zero_result_behavior() {
+        let graph = graph_with_named_leaves(&[("OrbitError", LeafKind::Struct)]);
+        let (_temp_dir, context) = context_for_graph(&graph);
+
+        let result =
+            run(search_input(context, "OrbitErorr", false, 5)).expect("non-fuzzy search result");
+
+        assert!(result.hits.is_empty());
+    }
+
+    #[test]
+    fn fuzzy_pass_returns_empty_for_no_plausible_match() {
+        let graph = graph_with_named_leaves(&[
+            ("Widget", LeafKind::Struct),
+            ("Adapter", LeafKind::Struct),
+            ("Runtime", LeafKind::Struct),
+        ]);
+        let (_temp_dir, context) = context_for_graph(&graph);
+
+        let result =
+            run(search_input(context, "zzzzzzzzzz", true, 5)).expect("fuzzy search result");
+
+        assert!(result.hits.is_empty());
+    }
+
+    #[test]
+    fn fuzzy_results_break_score_ties_alphabetically() {
+        let graph =
+            graph_with_named_leaves(&[("Baz", LeafKind::Struct), ("Bar", LeafKind::Struct)]);
+        let (_temp_dir, context) = context_for_graph(&graph);
+
+        let result = run(search_input(context, "Bax", true, 5)).expect("fuzzy search result");
+
+        assert_eq!(result.hits.len(), 2);
+        assert_eq!(result.hits[0].score, result.hits[1].score);
+        assert!(result.hits[0].selector < result.hits[1].selector);
+        assert_eq!(result.hits[0].name, "Bar");
+        assert_eq!(result.hits[1].name, "Baz");
+    }
+
     fn sql_substring_selectors(
         reader: &GraphIndexReader,
         query: &str,
@@ -746,6 +871,85 @@ mod tests {
         .into_iter()
         .map(|hit| hit.selector)
         .collect()
+    }
+
+    fn search_input(
+        context: GraphCommandContext,
+        query: &str,
+        allow_fuzzy: bool,
+        limit: usize,
+    ) -> SearchInput {
+        SearchInput {
+            context,
+            query: query.to_string(),
+            node_type: None,
+            kind_filter: None,
+            prefix: None,
+            source_regex: None,
+            include_non_code: false,
+            allow_fuzzy,
+            limit,
+        }
+    }
+
+    fn context_for_graph(graph: &CodebaseGraphV1) -> (tempfile::TempDir, GraphCommandContext) {
+        let temp_dir = tempfile::tempdir().expect("temp dir");
+        let store = GraphObjectStore::new(temp_dir.path().join("graph"));
+        let current_ref = store.write_graph(graph).expect("write graph");
+        let ref_name = RefName::new("search-test").expect("valid ref name");
+        store
+            .write_ref_atomic(&ref_name, &current_ref)
+            .expect("write graph ref");
+        let context = GraphCommandContext {
+            knowledge_dir: temp_dir.path().to_path_buf(),
+            workspace_root: None,
+            explicit_ref: Some(ref_name.as_str().to_string()),
+            explicit_knowledge_dir: true,
+            task_scope: TaskGraphScope::default(),
+        };
+        (temp_dir, context)
+    }
+
+    fn graph_with_named_leaves(named_leaves: &[(&str, LeafKind)]) -> CodebaseGraphV1 {
+        let root_id = "dir:.".to_string();
+        let mut file_ids = Vec::with_capacity(named_leaves.len());
+        let mut files = Vec::with_capacity(named_leaves.len());
+        let mut leaves = Vec::with_capacity(named_leaves.len());
+
+        for (index, (name, kind)) in named_leaves.iter().enumerate() {
+            let stem = name.to_ascii_lowercase();
+            let file_location = format!("src/{stem}.rs");
+            let file_id = format!("file:{file_location}");
+            let leaf_location = format!("{file_location}#{name}");
+            let leaf_id = format!("symbol:{leaf_location}:{kind}");
+            file_ids.push(file_id.clone());
+            files.push(file_node(
+                &file_id,
+                &format!("{stem}.rs"),
+                &file_location,
+                Some(&root_id),
+                vec![leaf_id.clone()],
+            ));
+            leaves.push(leaf_node_with_kind(
+                &leaf_id,
+                name,
+                &leaf_location,
+                Some(&file_id),
+                (index + 1) as u32,
+                kind.clone(),
+            ));
+        }
+
+        CodebaseGraphV1 {
+            root_dir_id: root_id.clone(),
+            dirs: vec![DirNode {
+                base: base_node(&root_id, ".", ".", "", None),
+                dir_children: Vec::new(),
+                file_children: file_ids,
+            }],
+            files,
+            leaves,
+        }
     }
 
     fn graph_for_default_ranking_snapshot() -> CodebaseGraphV1 {

@@ -14,6 +14,7 @@ use crate::{KnowledgeError, KnowledgeErrorKind};
 
 pub mod callers;
 pub mod deps;
+pub(crate) mod fuzzy;
 pub mod implementors;
 pub mod overview;
 pub mod pack;
