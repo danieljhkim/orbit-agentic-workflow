@@ -623,7 +623,6 @@ fn run_command_meta(cmd: &crate::command::run::RunCommand) -> CommandMeta {
 
     let (subcommand, target_type, target_id) = match &cmd.command {
         RunSubcommand::Ship(_) => ("ship", Some("workflow"), Some("ship")),
-        RunSubcommand::ShipAuto(_) => ("ship-auto", Some("workflow"), Some("ship-auto")),
         RunSubcommand::ShipLocal(_) => ("ship-local", Some("workflow"), Some("ship-local")),
         RunSubcommand::DuelPlan(args) => ("duel-plan", Some("task"), Some(args.task_id.as_str())),
         RunSubcommand::History(args) => ("history", Some("job_run"), args.job_id.as_deref()),
@@ -778,15 +777,6 @@ mod tests {
         assert_eq!(local.subcommand.as_deref(), Some("ship"));
         assert_eq!(local.target_type.as_deref(), Some("workflow"));
         assert_eq!(local.target_id.as_deref(), Some("ship"));
-    }
-
-    #[test]
-    fn run_ship_auto_audit_meta_uses_deprecated_top_level_command() {
-        let meta = meta_for(&["orbit", "run", "ship-auto"]);
-        assert_eq!(meta.command, "run");
-        assert_eq!(meta.subcommand.as_deref(), Some("ship-auto"));
-        assert_eq!(meta.target_type.as_deref(), Some("workflow"));
-        assert_eq!(meta.target_id.as_deref(), Some("ship-auto"));
     }
 
     #[test]

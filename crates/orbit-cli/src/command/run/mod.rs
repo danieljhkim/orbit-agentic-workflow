@@ -86,9 +86,6 @@ impl Execute for RunCommand {
 pub enum RunSubcommand {
     /// Ship backlog or explicitly selected tasks through the gated task pipeline
     Ship(ship::ShipCommand),
-    /// Deprecated alias for `orbit run ship`
-    #[command(name = "ship-auto", hide = true)]
-    ShipAuto(ship::LegacyShipAutoCommand),
     /// Deprecated alias for `orbit run ship --mode local`
     #[command(name = "ship-local", hide = true)]
     ShipLocal(ship::LegacyShipLocalCommand),
@@ -113,7 +110,6 @@ impl Execute for RunSubcommand {
     fn execute(self, runtime: &OrbitRuntime) -> Result<(), OrbitError> {
         match self {
             RunSubcommand::Ship(command) => command.execute(runtime),
-            RunSubcommand::ShipAuto(command) => command.execute(runtime),
             RunSubcommand::ShipLocal(command) => command.execute(runtime),
             RunSubcommand::DuelPlan(command) => command.execute(runtime),
             RunSubcommand::History(command) => command.execute(runtime),
@@ -181,18 +177,6 @@ mod tests {
                 assert_eq!(args.base.as_deref(), Some("main"));
             }
             _ => panic!("expected ship"),
-        }
-    }
-
-    #[test]
-    fn parses_ship_auto_as_deprecated_top_level_subcommand() {
-        let command = parse_run(&["orbit", "run", "ship-auto", "-m", "pr", "-b", "main"]);
-        match command.command {
-            RunSubcommand::ShipAuto(args) => {
-                assert_eq!(args.mode, ship::ShipMode::Pr);
-                assert_eq!(args.base.as_deref(), Some("main"));
-            }
-            _ => panic!("expected ship-auto"),
         }
     }
 

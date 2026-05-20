@@ -59,33 +59,6 @@ impl Execute for ShipCommand {
 
 #[derive(Args)]
 #[command(
-    about = "Deprecated alias for `orbit run ship`",
-    override_usage = "orbit run ship-auto [OPTIONS]",
-    after_help = "`orbit run ship-auto` was replaced by `orbit run ship`. Omit task ids for auto mode."
-)]
-pub struct LegacyShipAutoCommand {
-    /// Deprecated. Use `orbit run ship --mode <MODE>`.
-    #[arg(short = 'm', long, value_enum, default_value = "pr")]
-    pub mode: ShipMode,
-    /// Deprecated. Use `orbit run ship --base <BRANCH>`.
-    #[arg(short = 'b', long)]
-    pub base: Option<String>,
-    /// Deprecated.
-    #[arg(long)]
-    pub json: bool,
-}
-
-impl Execute for LegacyShipAutoCommand {
-    fn execute(self, _runtime: &OrbitRuntime) -> Result<(), OrbitError> {
-        let _ = self;
-        Err(OrbitError::InvalidInput(
-            "`orbit run ship-auto` was replaced by `orbit run ship` (auto mode runs when no task ids are supplied)".to_string(),
-        ))
-    }
-}
-
-#[derive(Args)]
-#[command(
     about = "Deprecated alias for `orbit run ship --mode local`",
     override_usage = "orbit run ship-local [<TASK_ID>...] [OPTIONS]",
     after_help = "`orbit run ship-local` was replaced by `orbit run ship --mode local`."
@@ -267,22 +240,6 @@ mod tests {
                 "base_branch": "main",
                 "task_ids": ["T20260425-2010"],
             })
-        );
-    }
-
-    #[test]
-    fn ship_auto_deprecation_returns_legacy_error() {
-        let runtime = OrbitRuntime::in_memory().expect("build runtime");
-        let err = LegacyShipAutoCommand {
-            mode: ShipMode::Pr,
-            base: None,
-            json: false,
-        }
-        .execute(&runtime)
-        .expect_err("deprecated command should fail");
-        assert!(
-            err.to_string().contains("orbit run ship"),
-            "unexpected error: {err}"
         );
     }
 
