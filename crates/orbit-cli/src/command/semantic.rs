@@ -1,7 +1,6 @@
 use clap::{Args, Subcommand};
 use orbit_core::command::semantic::{
-    SemanticInstallParams, SemanticReindexParams, SemanticRelatedParams, SemanticSearchParams,
-    SemanticUninstallParams,
+    SemanticInstallParams, SemanticReindexParams, SemanticUninstallParams,
 };
 use orbit_core::{OrbitError, OrbitRuntime};
 use serde_json::json;
@@ -9,7 +8,7 @@ use serde_json::json;
 use crate::command::Execute;
 
 #[derive(Args)]
-#[command(about = "Manage local semantic-search indexing")]
+#[command(about = "Manage local orbit-search indexing")]
 pub struct SemanticCommand {
     #[command(subcommand)]
     pub command: SemanticSubcommand,
@@ -19,16 +18,12 @@ pub struct SemanticCommand {
 pub enum SemanticSubcommand {
     /// Download the search companion and selected model
     Install(SemanticInstallArgs),
-    /// Remove installed semantic-search companion and/or models
+    /// Remove installed orbit-search companion and/or models
     Uninstall(SemanticUninstallArgs),
-    /// Rebuild task embeddings
-    Reindex(SemanticReindexArgs),
-    /// Show semantic-search index and companion status
+    /// Show orbit-search index and companion status
     Stats(SemanticStatsArgs),
-    /// Hybrid semantic search over indexed task fields
-    Search(SemanticSearchArgs),
-    /// Find semantically related tasks
-    Related(SemanticRelatedArgs),
+    /// Rebuild task embeddings
+    Index(SemanticIndexArgs),
 }
 
 #[derive(Args)]
@@ -53,7 +48,7 @@ pub struct SemanticUninstallArgs {
 }
 
 #[derive(Args)]
-pub struct SemanticReindexArgs {
+pub struct SemanticIndexArgs {
     #[arg(long)]
     pub model: Option<String>,
     #[arg(long)]
@@ -64,32 +59,6 @@ pub struct SemanticReindexArgs {
 
 #[derive(Args)]
 pub struct SemanticStatsArgs {
-    #[arg(long)]
-    pub json: bool,
-}
-
-#[derive(Args)]
-pub struct SemanticSearchArgs {
-    pub query: String,
-    #[arg(long, default_value_t = 10)]
-    pub limit: usize,
-    #[arg(long)]
-    pub field: Option<String>,
-    #[arg(long)]
-    pub kind: Option<String>,
-    #[arg(long)]
-    pub model: Option<String>,
-    #[arg(long)]
-    pub json: bool,
-}
-
-#[derive(Args)]
-pub struct SemanticRelatedArgs {
-    pub task_id: String,
-    #[arg(long, default_value_t = 10)]
-    pub limit: usize,
-    #[arg(long)]
-    pub model: Option<String>,
     #[arg(long)]
     pub json: bool,
 }
@@ -105,10 +74,8 @@ impl Execute for SemanticSubcommand {
         match self {
             SemanticSubcommand::Install(args) => args.execute(runtime),
             SemanticSubcommand::Uninstall(args) => args.execute(runtime),
-            SemanticSubcommand::Reindex(args) => args.execute(runtime),
             SemanticSubcommand::Stats(args) => args.execute(runtime),
-            SemanticSubcommand::Search(args) => args.execute(runtime),
-            SemanticSubcommand::Related(args) => args.execute(runtime),
+            SemanticSubcommand::Index(args) => args.execute(runtime),
         }
     }
 }
@@ -157,7 +124,7 @@ impl Execute for SemanticUninstallArgs {
     }
 }
 
-impl Execute for SemanticReindexArgs {
+impl Execute for SemanticIndexArgs {
     fn execute(self, runtime: &OrbitRuntime) -> Result<(), OrbitError> {
         let result = runtime.semantic_reindex(SemanticReindexParams {
             model: self.model,
@@ -167,7 +134,7 @@ impl Execute for SemanticReindexArgs {
             crate::output::json::print_pretty(&json!(result))
         } else {
             println!(
-                "Reindexed semantic search: model={} embedded_chunks={} skipped_fields={}",
+                "Indexed semantic search: model={} embedded_chunks={} skipped_fields={}",
                 result.model_id, result.report.embedded_chunks, result.report.skipped_fields
             );
             Ok(())
@@ -203,53 +170,5 @@ impl Execute for SemanticStatsArgs {
             );
             Ok(())
         }
-    }
-}
-
-impl Execute for SemanticSearchArgs {
-    fn execute(self, runtime: &OrbitRuntime) -> Result<(), OrbitError> {
-        let result = runtime.semantic_search(SemanticSearchParams {
-            query: self.query,
-            limit: self.limit,
-            field: self.field,
-            kind: self.kind,
-            model: self.model,
-        })?;
-        if self.json {
-            crate::output::json::print_pretty(&json!(result))
-        } else {
-            print_hits(&result.results);
-            println!("model={}", result.model_id);
-            Ok(())
-        }
-    }
-}
-
-impl Execute for SemanticRelatedArgs {
-    fn execute(self, runtime: &OrbitRuntime) -> Result<(), OrbitError> {
-        let result = runtime.semantic_related(SemanticRelatedParams {
-            task_id: self.task_id,
-            limit: self.limit,
-            model: self.model,
-        })?;
-        if self.json {
-            crate::output::json::print_pretty(&json!(result))
-        } else {
-            print_hits(&result.results);
-            println!("model={}", result.model_id);
-            Ok(())
-        }
-    }
-}
-
-fn print_hits(results: &[orbit_core::command::semantic::SemanticHit]) {
-    for hit in results {
-        println!(
-            "{}  score={:.4}  best={}  snippet=\"{}\"",
-            hit.source_id,
-            hit.score,
-            hit.best_field,
-            hit.snippet.replace('"', "\\\"")
-        );
     }
 }

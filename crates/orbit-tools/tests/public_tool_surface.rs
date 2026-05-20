@@ -37,6 +37,15 @@ fn unused_tools_are_not_registered_in_public_surface() {
             "removed tool still registered: {removed}"
         );
     }
+
+    let removed_prefix = "orbit.semantic.";
+    for removed in ["related", "search"] {
+        let name = format!("{removed_prefix}{removed}");
+        assert!(
+            !names.contains(name.as_str()),
+            "removed tool still registered: {name}"
+        );
+    }
 }
 
 #[test]
@@ -69,8 +78,11 @@ fn workflow_critical_tools_remain_registered() {
         "orbit.groundhog.side_effect",
         "orbit.pipeline.invoke",
         "orbit.pipeline.wait",
-        "orbit.semantic.related",
-        "orbit.semantic.search",
+        "orbit.search",
+        "orbit.semantic.index",
+        "orbit.semantic.install",
+        "orbit.semantic.stats",
+        "orbit.semantic.uninstall",
         "orbit.task.artifact.put",
         "proc.spawn",
     ] {
@@ -82,13 +94,13 @@ fn workflow_critical_tools_remain_registered() {
 }
 
 #[test]
-fn semantic_search_schema_uses_v2_task_field_names() {
+fn global_search_schema_uses_v2_task_field_names() {
     let mut registry = ToolRegistry::new();
     registry.register_builtins();
 
     let schema = registry
-        .get_schema("orbit.semantic.search")
-        .expect("semantic search schema");
+        .get_schema("orbit.search")
+        .expect("global search schema");
     let field = schema
         .parameters
         .iter()
@@ -97,7 +109,7 @@ fn semantic_search_schema_uses_v2_task_field_names() {
 
     assert_eq!(
         field.description,
-        "Optional indexed task field filter, such as title, description, plan, acceptance, or execution_summary."
+        "Optional indexed task field filter for semantic task search."
     );
 }
 

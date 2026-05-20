@@ -5,6 +5,7 @@
 ### Breaking Changes
 
 - **Design-doc decay-check surface removed**: `orbit design check`, `orbit.design.check` MCP tool, the wrapper script, and `make check-design-docs` are gone. Use `orbit design init/list/show` + same-PR update rule. ([ORB-00112])
+- **Search namespace split**: `orbit.semantic.search`, `orbit.semantic.related`, and the `orbit-semantic` skill are removed in favor of `orbit.search` and `orbit-search`; `orbit semantic reindex` is now `orbit semantic index`. Historical `semantic.search` / `semantic.related` audit event names are orphaned by this hard break because there are no external audit-history consumers yet. ([ORB-00196])
 
 ### Features
 
@@ -14,6 +15,7 @@
 - **`--planner-a` / `--planner-b` / `--arbiter` overrides** for `orbit run duel-plan`. ([ORB-00147])
 - **Dashboard Audit / Diagnostics side panels** + per-actor `implement_one` aggregate. ([ORB-00142])
 - **Scoreboard reworked**: section grouping + 4×4 head-to-head matrix ([ORB-00144]); unified leaderboard-matrix UX with inline bars and leader badges ([ORB-00154]); friction-report counts reconstructed from the append-only record stream ([ORB-00143]).
+- **Unified `orbit search` surface**: lexical search spans tasks, docs, learnings, and ADRs by default; `--semantic --kind task` opts into hybrid BM25 + cosine ranking and `--related <id>` performs task-neighbor lookup. `orbit semantic` now manages only companion lifecycle (`install`, `uninstall`, `stats`, `index`). ([ORB-00196])
 
 ### Fixes
 
@@ -100,7 +102,7 @@
 
 - **Project-learnings push-injection (L1/L2/L3)**: relevant learning summaries are now injected into agent context at three layers — engine pre-prompt before runtime spawn, MCP sidecar on path-bearing tools (`orbit.graph.show`, `orbit.graph.refs`, `orbit.task.show`), and a Claude Code `PreToolUse` hook on `Edit | Write | Read`. Summary-only payloads with per-session dedup, per-call caps, and an `ORBIT_SESSION_ID` envelope for cross-process dedup. ([ORB-00009])
 - **First-class design-docs surface (`orbit.design.*` + `orbit design check` CLI)**: four MCP tools (`init`, `list`, `show`, `check`) plus a Rust port of the design-doc decay checker, with `orbit workspace init --design` seeding `docs/design/CONVENTIONS.md` when absent. `make check-design-docs` and `scripts/check_design_doc_decay.py` now wrap the Rust path. ([ORB-00019])
-- **Default-seeded skills aligned across asset, registry, plugin, and router catalogs**: `orbit-learning` and `orbit-design` onboarded; `orbit-review-task` and `orbit-semantic` brought into the default seed and the plugin's `skills/` symlinks; three drift-detection unit tests guard the four catalogs against recurrence. Default seed bumped 7 → 11. ([ORB-00020], [ORB-00022])
+- **Default-seeded skills aligned across asset, registry, plugin, and router catalogs**: `orbit-learning` and `orbit-design` onboarded; `orbit-review-task` and the semantic-search skill brought into the default seed and the plugin's `skills/` symlinks; three drift-detection unit tests guard the four catalogs against recurrence. Default seed bumped 7 → 11. ([ORB-00020], [ORB-00022])
 - **`orbit workspace init --inject-agent-rules`**: opt-in flag writes an idempotent Orbit-rules block into `CLAUDE.md` and `AGENTS.md` at the workspace root, delimited by `<!-- orbit-managed:start/end -->` markers. Block content sourced from an editable asset; malformed marker pairs refuse to write. ([ORB-00023])
 - **Inline task status transitions in the dashboard**: per-task actions row gains a status selector wired through the existing `PATCH /tasks/:id` backend, ordered by `STATUS_ORDER` with `done` last and excluding `rejected`/`archived`/`friction`. Surfaces a "no longer shown in dashboard list" notice when transitioning to `done`. ([ORB-00025])
 - **`orbit.learning.*` exposed over MCP**: the full eight-tool learning surface (`add`, `list`, `search`, `show`, `update`, `supersede`, `prune`, `reindex`) is now reachable from every MCP client, not just `orbit tool run`. Restores parity with the `orbit-learning` skill instructions. ([ORB-00039])
@@ -184,7 +186,7 @@
 - **Missing-docs guardrail**: workspace-wide `missing_docs = "warn"` in `[workspace.lints.rust]`; `RUSTDOCFLAGS=-D warnings cargo doc --no-deps --workspace` wired into `scripts/ci-guardrails.sh`; 278 accidentally-`pub` items narrowed to `pub(crate)` (6.8% of the 4,116-item baseline). Legacy allow-fences in place for the remainder. ([ORB-00004])
 - **Community health files**: `CODE_OF_CONDUCT.md` (Contributor Covenant v2.1, contact via GitHub Security Advisories), `.github/PULL_REQUEST_TEMPLATE.md` with linked Orbit task ID + `make ci` / `make check-design-docs` checkboxes, and three `.github/ISSUE_TEMPLATE/*.yml` issue forms with a 14-crate dropdown sourced from live `crates/` listing. ([ORB-00011])
 - **Release runbook (`RELEASING.md`)**: pre-1.0 versioning policy with explicit breaking-vs-non-breaking criteria, 11-step release checklist, CHANGELOG conventions, and tag-push CI workflow description. ([T20260510-24])
-- **Semantic search surfaced in agent instructions**: new `orbit-semantic` SKILL.md modeled on `orbit-graph`, plus pointers from `orbit-create-task`, `orbit-execute-task`, `orbit-review-task`, `agent_implement.yaml`, `agent_review.yaml`, `epic_orchestrator.yaml`, and `dispatch_agent.yaml`. All references use "if available" / "optional" language so missing companion never hard-fails a workflow. ([T20260511-4])
+- **Semantic search surfaced in agent instructions**: new semantic-search skill modeled on `orbit-graph`, plus pointers from `orbit-create-task`, `orbit-execute-task`, `orbit-review-task`, `agent_implement.yaml`, `agent_review.yaml`, `epic_orchestrator.yaml`, and `dispatch_agent.yaml`. All references use "if available" / "optional" language so missing companion never hard-fails a workflow. ([T20260511-4])
 - **Design-pattern reference docs added**: `docs/design-patterns/{command,strategy,raii_guard,newtype,error_translation}.md` so feature work can copy from documented references instead of inventing new shapes. ([commit 3adcd838], [commit c713cc30], [commit 66389575], [commit f2f82bf1], [commit aa407aa0])
 - **Design-doc decay check**: new `scripts/check_design_doc_decay.py` and `make check-design-docs` flag `docs/design/*` docs whose `Last updated:` precedes the last commit on any referenced `crates/.../*.rs` file. ([commit 18c48744])
 - **Workspace lint table introduced**: `[workspace.lints]` in root `Cargo.toml` with each crate inheriting via `lints.workspace = true`; mechanical lint rules moved out of `CLAUDE.md` prose. ([commit 0cbb037d])

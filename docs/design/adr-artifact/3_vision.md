@@ -87,7 +87,7 @@ None of this is novel in isolation. The combination — structured ADRs + agent-
 - [docs/design/CONVENTIONS.md](../CONVENTIONS.md) — current ADR template and folder conventions this proposal modifies.
 - [docs/design/task-sync/](../task-sync/) — closest v2-design analog; also docs-only at v1.
 - [crates/orbit-store/src/file/task_store/](../../../crates/orbit-store/src/file/task_store/) — the layered-store pattern this design copies.
-- [crates/orbit-embed/src/vector/](../../../crates/orbit-embed/src/vector/) — semantic-search infrastructure reused by `orbit.adr.search`.
+- [crates/orbit-embed/src/vector/](../../../crates/orbit-embed/src/vector/) — orbit-search infrastructure reused by `orbit.adr.search`.
 
 ### External
 

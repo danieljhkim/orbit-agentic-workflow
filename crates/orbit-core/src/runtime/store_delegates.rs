@@ -333,7 +333,7 @@ impl TaskRecords<'_> {
         let deleted = self.store.delete_task(id)?;
         if deleted && let Err(error) = self.semantic_vector.delete_source("task", id) {
             orbit_common::tracing::debug!(
-                target: "orbit.semantic.indexer",
+                target: "orbit.search.indexer",
                 task_id = id,
                 error = %error,
                 "semantic delete cascade failed after task deletion",

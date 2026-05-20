@@ -12,6 +12,7 @@ sidebar:
 | `orbit init` | Initialize the global Orbit root, skills, and skill links. |
 | `orbit workspace` | Initialize and manage workspaces. |
 | `orbit config` | Show or update Orbit configuration. |
+| `orbit semantic` | Manage the local embedding companion: `install`, `uninstall`, `stats`, and `index`. |
 
 ## Operate
 
@@ -24,6 +25,9 @@ sidebar:
 | `orbit run duel-plan <task_id> --wait` | Submit a planning duel and wait for its terminal status before returning. |
 | `orbit task` | Create, update, and manage tasks. |
 | `orbit task artifact put <task_id> <source_path>` | Store a UTF-8 file under a task's artifacts directory. |
+| `orbit search <query>` | Search tasks, docs, learnings, and ADRs; add `--semantic` for task-vector ranking or `--related <id>` for task neighbors. |
+| `orbit docs` | Search and manage the indexed docs corpus. |
+| `orbit learning` | Create, search, and curate project learnings. |
 
 ## Observe
 

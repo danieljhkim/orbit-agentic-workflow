@@ -48,8 +48,8 @@ const DEFAULT_SKILL_FILES: [(&str, &str); 12] = [
         include_str!("../../assets/skills/orbit-review-task/SKILL.md"),
     ),
     (
-        "orbit-semantic",
-        include_str!("../../assets/skills/orbit-semantic/SKILL.md"),
+        "orbit-search",
+        include_str!("../../assets/skills/orbit-search/SKILL.md"),
     ),
     (
         "orbit-track-issues",

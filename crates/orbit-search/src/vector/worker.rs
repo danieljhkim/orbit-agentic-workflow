@@ -44,7 +44,7 @@ impl EmbedWorker {
                         Ok(value) => embedder = Some(value),
                         Err(error) => {
                             orbit_common::tracing::debug!(
-                                target: "orbit.semantic.indexer",
+                                target: "orbit.search.indexer",
                                 error = %error,
                                 "semantic indexing skipped because embedder initialization failed",
                             );
@@ -58,7 +58,7 @@ impl EmbedWorker {
                 for job in &batch {
                     if let Err(error) = store.index_task(&job.task, active_embedder, job.force) {
                         orbit_common::tracing::debug!(
-                            target: "orbit.semantic.indexer",
+                            target: "orbit.search.indexer",
                             task_id = job.task.id.as_str(),
                             error = %error,
                             "semantic indexing failed after task mutation",
@@ -75,14 +75,14 @@ impl EmbedWorker {
             Ok(()) => {}
             Err(TrySendError::Full(job)) => {
                 orbit_common::tracing::debug!(
-                    target: "orbit.semantic.indexer",
+                    target: "orbit.search.indexer",
                     task_id = job.task.id.as_str(),
                     "semantic indexing queue is full; dropping task update",
                 );
             }
             Err(TrySendError::Disconnected(_)) => {
                 orbit_common::tracing::debug!(
-                    target: "orbit.semantic.indexer",
+                    target: "orbit.search.indexer",
                     "semantic indexing queue is disconnected; dropping task update",
                 );
             }

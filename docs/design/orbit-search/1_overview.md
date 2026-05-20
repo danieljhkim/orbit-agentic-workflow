@@ -3,11 +3,11 @@ summary: "Semantic Search — Overview"
 type: design
 title: "Semantic Search — Overview"
 owner: claude
-last_updated: 2026-05-17
+last_updated: 2026-05-20
 status: Draft
-feature: semantic-search
+feature: orbit-search
 doc_role: overview
-tags: ["semantic-search"]
+tags: ["orbit-search"]
 ---
 
 # Semantic Search — Overview
@@ -75,8 +75,8 @@ Phase 1 covers tasks only. Phase 2 will add `source_kind = symbol` rows that emb
 | Per-field embedding strategy | [2_design.md §4](./2_design.md), [4_decisions.md ADR-003](./4_decisions.md) | [T20260510-9] |
 | FTS5 + cosine + RRF hybrid pipeline | [2_design.md §5](./2_design.md), [4_decisions.md ADR-004](./4_decisions.md) | [T20260510-10] |
 | `orbit semantic install/uninstall` CLI | [2_design.md §6.1](./2_design.md) | [T20260510-9] |
-| `orbit semantic search/related` CLI + MCP | [2_design.md §6](./2_design.md) | [T20260510-10] |
-| Index-on-mutation + reindex command | [2_design.md §7](./2_design.md) | [T20260510-9] |
+| `orbit search` CLI + MCP | [2_design.md §6](./2_design.md) | [T20260510-10] |
+| Index-on-mutation + index command | [2_design.md §7](./2_design.md) | [T20260510-9] |
 | Existing task store API | [crates/orbit-store/src/file/task_store/v2_store.rs](../../../crates/orbit-store/src/file/task_store/v2_store.rs) | — |
 | Concerns & honest limitations | [2_design.md §8](./2_design.md) | [T20260510-3] |
 | ADR log | [4_decisions.md](./4_decisions.md) | [T20260510-3] |

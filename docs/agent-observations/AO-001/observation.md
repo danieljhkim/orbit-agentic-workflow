@@ -45,7 +45,7 @@ For tools with full CLI/MCP parity, codex still picks CLI for the same operation
 | `orbit.task.show` | 18 / 197 | 31 / 6 | 31 / 17 | 14 / 5 |
 | `orbit.task.update` | 43 / 123 | 34 / 9 | 43 / 2 | 2 / 2 |
 | `orbit.graph.pack` | 0 / 88 | 12 / 0 | 28 / 6 | 18 / 1 |
-| `orbit.semantic.related` | 13 / 52 | 4 / 0 | 6 / 0 | 2 / 0 |
+| `orbit.search` | 13 / 52 | 4 / 0 | 6 / 0 | 2 / 0 |
 
 Codex's MCP usage of `orbit.task.update` (43 MCP, 123 CLI) is the key counter-evidence to "codex never uses MCP." It proves codex *can* and *does* reach for MCP — it just defaults to CLI even when MCP is wired and identical.
 

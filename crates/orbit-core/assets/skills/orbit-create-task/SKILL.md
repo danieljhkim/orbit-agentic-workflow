@@ -21,7 +21,7 @@ See the `orbit` skill for the full mapping rule and surface coverage. Examples b
 ## Workflow
 
 1. Confirm objective, constraints, and done criteria.
-2. Inspect codebase context before creating the task. If you want background on prior related work, `orbit.semantic.search` is available (hybrid BM25 + cosine over indexed task fields) — useful when the proposed work might overlap with a task whose title uses different vocabulary. Optional, not required. See `orbit-semantic`.
+2. Inspect codebase context before creating the task. If you want background on prior related work, `orbit.search` is available; use `semantic: true` with `kind: "task"` when the proposed work might overlap with a task whose title uses different vocabulary. Optional, not required. See `orbit-search`.
 3. Write clear acceptance criteria that define observable success.
 4. Choose task metadata while the scope is fresh: set `complexity` to `low`, `medium`, or `hard` whenever you can make a reasonable call. Leave it unset only when the current context is too thin to classify.
 5. Add assumptions, risks, and rollback notes to the description when they matter.
@@ -74,7 +74,7 @@ The full `relations` array accepts these typed variants. Only the first two acce
 Dangling targets (e.g., `resolves` pointing at a non-existent friction) succeed at completion time but emit a `TaskRelationDangling` audit event — they do not roll the task back.
 
 ### Tier 3 - Tags
-Tags are indexed by `orbit.semantic.search`; use existing tags where they fit before inventing new ones, because speculative tag soup is costly.
+Tags are part of the task corpus searched by `orbit.search`; use existing tags where they fit before inventing new ones, because speculative tag soup is costly.
 
 ## Task Quality Standards
 

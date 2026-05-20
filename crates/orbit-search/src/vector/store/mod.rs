@@ -1,4 +1,4 @@
-//! `VectorStore` — the SQLite-backed semantic-search index.
+//! `VectorStore` — the SQLite-backed orbit-search index.
 //!
 //! Module layout:
 //!
@@ -31,7 +31,7 @@ pub struct VectorStore {
 }
 
 impl VectorStore {
-    /// Open the workspace-local semantic-search SQLite at `path`, applying WAL
+    /// Open the workspace-local orbit-search SQLite at `path`, applying WAL
     /// + busy_timeout pragmas and creating the embeddings/corpus_fts schema if missing.
     pub fn open(path: &Path) -> Result<Self, OrbitError> {
         if let Some(parent) = path.parent() {
@@ -47,7 +47,7 @@ impl VectorStore {
         })
     }
 
-    /// Open an in-memory semantic-search database. Used by tests.
+    /// Open an in-memory orbit-search database. Used by tests.
     pub fn open_in_memory() -> Result<Self, OrbitError> {
         let conn = Connection::open_in_memory().map_err(|e| OrbitError::Store(e.to_string()))?;
         schema::ensure_vector_schema(&conn)?;

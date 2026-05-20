@@ -54,6 +54,9 @@ pub use command::docs::{
     DocMigrationReport, DocRecord, DocSearchResult, DocShow, DocType, SearchResult, TaskRelatedDoc,
 };
 pub use command::learning::migrate_learning_layout_at;
+pub use command::search::{
+    GlobalSearchHit, GlobalSearchKind, GlobalSearchMode, GlobalSearchParams, GlobalSearchResponse,
+};
 pub use command::task_template::TaskTemplate;
 pub use command::workflow::{
     WORKFLOWS, Workflow, WorkflowInput, build_workflow_input, build_workflow_input_for,

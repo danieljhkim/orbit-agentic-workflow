@@ -28,7 +28,7 @@ Today, [CONVENTIONS.md §11](../CONVENTIONS.md) lists two enforcement gaps as fu
 
 ### 1.3 Semantic search over design-doc content
 
-Semantic search currently covers task artifacts ([docs/design/semantic-search/](../semantic-search/)). Extending it to design-doc bodies would let agents query "where do we explain X?" without grep. The 4-doc role split makes the query surface unusually well-shaped: search-by-role (e.g. "vision documents that mention sandboxing") is a natural cut. Open question: do design docs share the BLAKE3-deduped index used for tasks, or get their own source kind so role and feature filters are first-class?
+Semantic search currently covers task artifacts ([docs/design/orbit-search/](../orbit-search/)). Extending it to design-doc bodies would let agents query "where do we explain X?" without grep. The 4-doc role split makes the query surface unusually well-shaped: search-by-role (e.g. "vision documents that mention sandboxing") is a natural cut. Open question: do design docs share the BLAKE3-deduped index used for tasks, or get their own source kind so role and feature filters are first-class?
 
 ### 1.4 Auto-bump `Last updated:` via pre-commit hook or CI
 
@@ -85,7 +85,7 @@ The Status line on an ADR currently embeds task IDs as plain text (`**Status:** 
 
 - [docs/design/CONVENTIONS.md](../CONVENTIONS.md) — the convention rulebook this design folder implements and refines.
 - [docs/design/adr-artifact/](../adr-artifact/) — proposal to lift ADRs into a queryable artifact store; closely linked to [§1.1](#11-move-adrs-into-a-queryable-artifact-store) and [§1.5](#15-promote-4_decisionsmd-status-line-task-ids-to-typed-lifecycle-events).
-- [docs/design/semantic-search/](../semantic-search/) — current task-only semantic-search infrastructure, prerequisite for [§1.3](#13-semantic-search-over-design-doc-content).
+- [docs/design/orbit-search/](../orbit-search/) — current task-only orbit-search infrastructure, prerequisite for [§1.3](#13-orbit-search-over-design-doc-content).
 - [ARCHITECTURE.md](../../../ARCHITECTURE.md) — crate layering and the `orbit-core` boundary that hosts the design-doc implementation.
 - [crates/orbit-core/src/command/design.rs](../../../crates/orbit-core/src/command/design.rs) — implementation entry point.
 

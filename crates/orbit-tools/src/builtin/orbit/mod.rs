@@ -8,6 +8,7 @@ pub mod knowledge;
 pub mod learning;
 pub mod pipeline;
 pub mod review_thread;
+pub mod search;
 pub mod semantic;
 pub mod state;
 pub mod task;
@@ -96,8 +97,11 @@ pub fn register(registry: &mut ToolRegistry) {
     registry.register(review_thread::list::OrbitReviewThreadListTool);
     registry.register(review_thread::reply::OrbitReviewThreadReplyTool);
     registry.register(review_thread::resolve::OrbitReviewThreadResolveTool);
-    registry.register(semantic::search::OrbitSemanticSearchTool);
-    registry.register(semantic::related::OrbitSemanticRelatedTool);
+    registry.register(search::OrbitSearchTool);
+    registry.register(semantic::install::OrbitSemanticInstallTool);
+    registry.register(semantic::uninstall::OrbitSemanticUninstallTool);
+    registry.register(semantic::stats::OrbitSemanticStatsTool);
+    registry.register(semantic::index::OrbitSemanticIndexTool);
     registry.register(state::get::OrbitStateGetTool);
     registry.register(state::set::OrbitStateSetTool);
 }

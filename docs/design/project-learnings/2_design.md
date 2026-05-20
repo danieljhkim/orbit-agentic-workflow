@@ -401,7 +401,7 @@ Phase 2's symbol-aware scope handles renames cleanly because the knowledge graph
 
 Phase 1 ranks matched learnings by decayed upvotes before falling back to manual priority and recency. This is better than recency-only ranking, but it depends on agents recording votes only when they have genuinely evaluated a duplicate concern. Over-eager upvoting would make the signal noisy. The v1 mitigations are task-anchored idempotency and time decay, not a full abuse-prevention system.
 
-Phase 2's semantic-similarity ranking from semantic-search may complement or replace parts of this formula; vote score is a load-bearing signal, not the whole relevance model.
+Phase 2's semantic-similarity ranking from orbit-search may complement or replace parts of this formula; vote score is a load-bearing signal, not the whole relevance model.
 
 ### 8.4 Layer 3 hook is Claude-Code-only
 

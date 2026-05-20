@@ -70,8 +70,14 @@ pub(crate) const GRAPH_READ_TOOL_NAMES: &[&str] = &[
     "orbit.graph.show",
 ];
 
-pub(crate) const SEMANTIC_READ_TOOL_NAMES: &[&str] =
-    &["orbit.semantic.search", "orbit.semantic.related"];
+pub(crate) const SEARCH_TOOL_NAMES: &[&str] = &["orbit.search"];
+
+pub(crate) const SEMANTIC_TOOL_NAMES: &[&str] = &[
+    "orbit.semantic.index",
+    "orbit.semantic.install",
+    "orbit.semantic.stats",
+    "orbit.semantic.uninstall",
+];
 
 pub(crate) const DOCS_TOOL_NAMES: &[&str] = &[
     "orbit.docs.list",
@@ -102,14 +108,16 @@ pub(crate) fn safe_mcp_tool_names() -> Vec<&'static str> {
         TASK_TOOL_NAMES.len()
             + FRICTION_TOOL_NAMES.len()
             + GRAPH_READ_TOOL_NAMES.len()
-            + SEMANTIC_READ_TOOL_NAMES.len()
+            + SEARCH_TOOL_NAMES.len()
+            + SEMANTIC_TOOL_NAMES.len()
             + DOCS_TOOL_NAMES.len()
             + LEARNING_TOOL_NAMES.len(),
     );
     names.extend_from_slice(TASK_TOOL_NAMES);
     names.extend_from_slice(FRICTION_TOOL_NAMES);
     names.extend_from_slice(GRAPH_READ_TOOL_NAMES);
-    names.extend_from_slice(SEMANTIC_READ_TOOL_NAMES);
+    names.extend_from_slice(SEARCH_TOOL_NAMES);
+    names.extend_from_slice(SEMANTIC_TOOL_NAMES);
     names.extend_from_slice(DOCS_TOOL_NAMES);
     names.extend_from_slice(LEARNING_TOOL_NAMES);
     names
@@ -119,7 +127,8 @@ pub(crate) fn is_mcp_tool_exposed(name: &str) -> bool {
     TASK_TOOL_NAMES.contains(&name)
         || FRICTION_TOOL_NAMES.contains(&name)
         || GRAPH_READ_TOOL_NAMES.contains(&name)
-        || SEMANTIC_READ_TOOL_NAMES.contains(&name)
+        || SEARCH_TOOL_NAMES.contains(&name)
+        || SEMANTIC_TOOL_NAMES.contains(&name)
         || DOCS_TOOL_NAMES.contains(&name)
         || LEARNING_TOOL_NAMES.contains(&name)
 }
@@ -342,7 +351,8 @@ mod tests {
 
     use super::{
         DOCS_TOOL_NAMES, GRAPH_READ_TOOL_NAMES, LEARNING_TOOL_NAMES, RuntimeMcpHost,
-        SEMANTIC_READ_TOOL_NAMES, TASK_TOOL_NAMES, is_mcp_tool_exposed, safe_mcp_tool_names,
+        SEARCH_TOOL_NAMES, SEMANTIC_TOOL_NAMES, TASK_TOOL_NAMES, is_mcp_tool_exposed,
+        safe_mcp_tool_names,
     };
 
     #[test]
@@ -376,11 +386,16 @@ mod tests {
             assert!(is_mcp_tool_exposed(name));
         }
 
-        for name in SEMANTIC_READ_TOOL_NAMES {
+        for name in SEMANTIC_TOOL_NAMES {
             assert!(
                 names.contains(*name),
                 "missing runtime semantic read tool: {name}"
             );
+            assert!(is_mcp_tool_exposed(name));
+        }
+
+        for name in SEARCH_TOOL_NAMES {
+            assert!(names.contains(*name), "missing runtime search tool: {name}");
             assert!(is_mcp_tool_exposed(name));
         }
 
@@ -441,10 +456,17 @@ mod tests {
             );
         }
 
-        for name in SEMANTIC_READ_TOOL_NAMES {
+        for name in SEMANTIC_TOOL_NAMES {
             assert!(
                 listed.contains(*name),
                 "client-visible MCP tool list missing semantic read tool: {name}"
+            );
+        }
+
+        for name in SEARCH_TOOL_NAMES {
+            assert!(
+                listed.contains(*name),
+                "client-visible MCP tool list missing search tool: {name}"
             );
         }
 
