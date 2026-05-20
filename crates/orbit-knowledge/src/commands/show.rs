@@ -6,6 +6,8 @@ use crate::graph::{CodebaseGraphV1, GraphIndexNodeRow, GraphNode, GraphReadOptio
 use crate::service::{GraphContextService, NodeContext};
 use crate::{KnowledgeError, Selector};
 
+use super::fuzzy::levenshtein_distance;
+
 /// Diagnostic suggestions are intentionally capped so failed lookups stay cheap
 /// and payloads remain small for agent callers.
 const DID_YOU_MEAN_LIMIT: usize = 5;
@@ -209,35 +211,6 @@ fn string_affinity_rank(needle: &str, candidate: &str) -> u8 {
     } else {
         2
     }
-}
-
-fn levenshtein_distance(left: &str, right: &str) -> usize {
-    if left == right {
-        return 0;
-    }
-    if left.is_empty() {
-        return right.chars().count();
-    }
-    if right.is_empty() {
-        return left.chars().count();
-    }
-
-    let right_chars = right.chars().collect::<Vec<_>>();
-    let mut previous = (0..=right_chars.len()).collect::<Vec<_>>();
-    let mut current = vec![0; right_chars.len() + 1];
-
-    for (left_index, left_char) in left.chars().enumerate() {
-        current[0] = left_index + 1;
-        for (right_index, right_char) in right_chars.iter().enumerate() {
-            let substitution = usize::from(left_char != *right_char);
-            current[right_index + 1] = (previous[right_index + 1] + 1)
-                .min(current[right_index] + 1)
-                .min(previous[right_index] + substitution);
-        }
-        std::mem::swap(&mut previous, &mut current);
-    }
-
-    previous[right_chars.len()]
 }
 
 fn try_show_via_sql_index(

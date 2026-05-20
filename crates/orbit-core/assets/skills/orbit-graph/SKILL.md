@@ -66,6 +66,10 @@ Do not also run `overview`, `refs`, or `pack` unless they add information the ta
 
 If you are about to call `pack` or `show` on each candidate to verify which one matches, stop and reconsider — that is the verification-loop anti-pattern. Either rephrase the question as a `source_regex` enumeration, or use the appropriate relation tool (`callers`, `implementors`, `refs`).
 
+## Fuzzy Fallback
+
+Pass `allow_fuzzy: true` to recover from typos and partial recall in symbol names or file basenames. The fuzzy pass is case-insensitive and only runs when the deterministic pass returns zero results; when any exact result exists, no fuzzy candidate appears. Each fuzzy hit is tagged `match_kind: "fuzzy"` and carries a `score` in [0.0, 1.0] (higher is closer; 1.0 is reserved for exact, which would have hit the deterministic path). Off by default. Source-regex queries ignore the flag. The `format: "selectors"` projection returns only selectors, so it intentionally drops `match_kind` and `score`.
+
 ## When `fs.read` Is Acceptable
 
 - Graph returned `knowledge_unavailable`
@@ -80,6 +84,7 @@ If you are about to call `pack` or `show` on each candidate to verify which one 
 orbit tool run orbit.graph.search --input '{"query":"hello","type":"symbol","kind":"function","limit":10}'
 orbit tool run orbit.graph.show --input '{"selector":"symbol:src/lib.rs#hello:function"}'
 orbit tool run orbit.graph.search --input '{"query":"AgentRuntime","include_non_code":true}'
+orbit tool run orbit.graph.search --input '{"query":"AgentRuntmie","allow_fuzzy":true}'
 
 # Trait/interface implementations
 orbit tool run orbit.graph.implementors --input '{"trait_selector":"symbol:src/lib.rs#Greeter:trait"}'
