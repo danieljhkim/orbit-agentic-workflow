@@ -251,8 +251,8 @@ Either retriever alone has a failure mode the other doesn't. RRF resolves both a
 ```
 orbit semantic install   [--model bge-small | minilm-l6 | nomic-v1.5] [--force]
 orbit semantic uninstall [--model MODEL] [--all]
-orbit search <query> [--semantic] [--kind task|doc|learning|adr|all] [--limit N] [--field FIELD]
-orbit search --related <task-id> [--limit N]
+orbit search <query> [--hybrid] [--kind task|doc|learning|adr|all] [--limit N] [--field FIELD]
+orbit search --semantic <task-id> [--limit N]
 orbit semantic index     [--force] [--model MODEL]
 orbit semantic stats
 ```
@@ -261,13 +261,13 @@ orbit semantic stats
 
 `uninstall` removes the companion binary and (by default) the currently active model. `--model M` removes only model M. `--all` removes the companion plus every installed model.
 
-`orbit search` defaults to lexical matching across tasks, docs, learnings, and ADRs. `--semantic --kind task` runs the hybrid pipeline over task vectors; non-task kinds remain lexical even when `--semantic` is set. `--related` embeds the target task's `purpose + summary` and runs cosine-only against other tasks (lexical fusion adds noise here). `orbit semantic index` rebuilds the `embeddings` rows; `--force` ignores `content_hash` and re-embeds everything. `stats` reports row counts, model distribution, stale-row count, and companion-install status.
+`orbit search` defaults to lexical matching across tasks, docs, learnings, and ADRs. `--hybrid --kind task` runs the hybrid pipeline over task vectors; non-task kinds remain lexical even when `--hybrid` is set. `--semantic <task-id>` embeds the target task's `purpose + summary` and runs cosine-only against other tasks (lexical fusion adds noise here). `orbit semantic index` rebuilds the `embeddings` rows; `--force` ignores `content_hash` and re-embeds everything. `stats` reports row counts, model distribution, stale-row count, and companion-install status.
 
-If the companion is not installed, `orbit search --semantic`, `orbit search --related`, and `orbit semantic index` exit non-zero with: `"Semantic search not enabled. Run \`orbit semantic install\` to download the inference companion."`
+If the companion is not installed, `orbit search --hybrid`, `orbit search --semantic <task-id>`, and `orbit semantic index` exit non-zero with: `"Semantic search not enabled. Run \`orbit semantic install\` to download the inference companion."`
 
 ### 6.2 MCP tools
 
-- `orbit.search` — `(query?, semantic?, related?, kind?, limit?, field?)` → ranked results with snippets.
+- `orbit.search` — `(query?, hybrid?, semantic?, kind?, limit?, field?)` → ranked results with snippets.
 - `orbit.semantic.install`, `orbit.semantic.uninstall`, `orbit.semantic.stats`, `orbit.semantic.index` — companion lifecycle.
 
 `orbit.search` is read-only. Indexing is implicit (on task mutation) or explicit (`orbit semantic index` / `orbit.semantic.index`).
@@ -405,7 +405,7 @@ Three loops at increasing scope:
 
 This section deliberately does not commit to:
 
-- **Symbol → ADR back-link as a precomputed edge.** Falls out of a future `orbit search --kind adr --semantic` path once ADRs are vector-indexed. Precomputing top-k matches per symbol is a phase-3 optimization tied to the task-lineage feature, not a v1 requirement.
+- **Symbol → ADR back-link as a precomputed edge.** Falls out of a future vector-ranked ADR search path once ADRs are vector-indexed. Precomputing top-k matches per symbol is a phase-3 optimization tied to the task-lineage feature, not a v1 requirement.
 - **Code-aware embedding model.** CodeBERT, voyage-code, and similar outperform general-text models on code retrieval but are larger and weaker on English. v1 ships with the BGE-small default ([ADR-001](./4_decisions.md#adr-001--fastembed-rs-onnx-backend-over-candle-llamacpp-or-external-ollama)) and revisits if recall on code queries underperforms.
 - **HNSW upgrade.** The graph corpus may cross the brute-force ceiling. Schema is already forward-compatible with `sqlite-vec` per [ADR-002](./4_decisions.md#adr-002--brute-force-cosine-over-sqlite-blobs-sqlite-vec-reserved-as-phase-2-upgrade); the decision to switch is a separate ADR at the point of operational evidence — see [3_vision.md §1.3](./3_vision.md).
 - **Free-floating file-scope comments.** Comments not attached to any leaf's source span (e.g. section dividers between two `fn`s) are not embedded. The project convention is "default to no comments" so this gap is small and low-signal.

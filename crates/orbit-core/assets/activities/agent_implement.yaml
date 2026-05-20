@@ -39,7 +39,7 @@ spec:
        `context_files` as Orbit graph selectors: prefer `orbit.graph.pack` to
        gather context, and fall back to `fs.read` only for selectors that stay
        unresolved or when the knowledge graph is unavailable. If `orbit.search`
-       is available, call it with `related: "<task-id>"` to surface prior tasks
+       is available, call it with `semantic: "<task-id>"` to surface prior tasks
        not linked via `context_files` (past decisions, related review threads);
        skip if the companion binary is not installed.
     4. Use `input.workspace_path` and `input.repo_root` when provided; they

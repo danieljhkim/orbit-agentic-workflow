@@ -47,7 +47,7 @@ spec:
        files. Read context selectors via `orbit.graph.pack`, falling back
        to `fs.read` only when the graph is unavailable or a selector is
        unresolved. If `orbit.search` is available, optionally call it with
-       `related: "<task-id>"` to surface prior similar tasks whose review
+       `semantic: "<task-id>"` to surface prior similar tasks whose review
        threads or decisions may inform this review; skip if the companion
        binary is not installed.
     3. For each blocking issue you find — correctness bug, broken contract,

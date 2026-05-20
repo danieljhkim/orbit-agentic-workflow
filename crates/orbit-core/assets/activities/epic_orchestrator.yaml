@@ -62,7 +62,7 @@ spec:
        - it is not already represented by a child run you dispatched in
          this cycle.
        When dependency direction is ambiguous from the descriptions alone,
-       `orbit.search` with `related: "<subtask-id>"` (if available) can
+       `orbit.search` with `semantic: "<subtask-id>"` (if available) can
        surface prior tasks that establish ordering; skip if the companion
        binary is not installed.
 

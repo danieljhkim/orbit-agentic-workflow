@@ -6,24 +6,26 @@ use crate::command::Execute;
 #[derive(Args)]
 #[command(
     about = "Search tasks, docs, learnings, and ADRs",
-    after_help = "Index coverage note: vector search runs against tasks only today; docs, learnings, and ADRs use lexical matching regardless of --semantic."
+    after_help = "Index coverage note: vector search runs against tasks only today; docs, learnings, and ADRs use lexical matching regardless of --hybrid."
 )]
 #[command(group(
     ArgGroup::new("search_input")
-        .args(["query", "related"])
+        .args(["query", "semantic"])
         .required(true)
         .multiple(false)
 ))]
 pub struct SearchCommand {
-    /// Free-text query. Defaults to lexical matching unless --semantic is set.
+    /// Free-text query. Defaults to lexical matching unless --hybrid is set.
     #[arg(value_name = "query")]
     pub query: Option<String>,
+    // ADR-0175: `--hybrid` names the free-text BM25 + cosine ranker.
     /// Use hybrid BM25 + cosine ranking for indexed task fields. Other kinds remain lexical.
     #[arg(long)]
-    pub semantic: bool,
-    /// Find cosine-neighbor tasks for a known task ID. Implies semantic mode.
+    pub hybrid: bool,
+    // ADR-0175: `--semantic <id>` names task-neighbor lookup.
+    /// Find cosine-neighbor tasks for a known task ID. Requires task vectors.
     #[arg(long, value_name = "id")]
-    pub related: Option<String>,
+    pub semantic: Option<String>,
     /// Restrict results to one corpus kind.
     #[arg(long, value_enum, default_value_t = SearchKindArg::All)]
     pub kind: SearchKindArg,
@@ -78,8 +80,8 @@ impl Execute for SearchCommand {
     fn execute(self, runtime: &OrbitRuntime) -> Result<(), OrbitError> {
         let response = runtime.global_search(GlobalSearchParams {
             query: self.query,
+            hybrid: self.hybrid,
             semantic: self.semantic,
-            related: self.related,
             kind: self.kind.into(),
             limit: self.limit,
             field: self.field,

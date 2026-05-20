@@ -8,9 +8,15 @@ use crate::{GlobalSearchKind, GlobalSearchParams, OrbitRuntime};
 use super::input::optional_bool_alias;
 
 pub(super) fn search(runtime: &OrbitRuntime, input: Value) -> Result<Value, OrbitError> {
-    let related = optional_string_alias(&input, &["related", "id", "task_id", "taskId"])?;
-    let semantic =
-        optional_bool_alias(&input, &["semantic"])?.unwrap_or(false) || related.is_some();
+    // ADR-0175: hard-break the retired neighbor parameter; no compatibility shim.
+    if input.get("related").is_some() {
+        return Err(OrbitError::InvalidInput(
+            "unknown parameter `related`; use `semantic` for task-neighbor lookup".to_string(),
+        ));
+    }
+
+    let semantic = optional_string_alias(&input, &["semantic", "id", "task_id", "taskId"])?;
+    let hybrid = optional_bool_alias(&input, &["hybrid"])?.unwrap_or(false);
     let kind = optional_string_alias(&input, &["kind"])?
         .map(|kind| GlobalSearchKind::from_str(&kind).map_err(OrbitError::InvalidInput))
         .transpose()?
@@ -18,8 +24,8 @@ pub(super) fn search(runtime: &OrbitRuntime, input: Value) -> Result<Value, Orbi
 
     let result = runtime.global_search(GlobalSearchParams {
         query: optional_string_alias(&input, &["query"])?,
+        hybrid,
         semantic,
-        related,
         kind,
         limit: optional_u32_alias(&input, &["limit"])?
             .map(|limit| limit as usize)
@@ -39,4 +45,32 @@ pub(super) fn search(runtime: &OrbitRuntime, input: Value) -> Result<Value, Orbi
     })?;
     serde_json::to_value(result)
         .map_err(|error| OrbitError::Execution(format!("serialize search result: {error}")))
+}
+
+#[cfg(test)]
+mod tests {
+    use serde_json::json;
+
+    use super::*;
+
+    #[test]
+    fn search_tool_rejects_legacy_related_param() {
+        let runtime = OrbitRuntime::in_memory().expect("build runtime");
+        let error = search(&runtime, json!({ "related": "ORB-00001" }))
+            .expect_err("legacy related parameter should be rejected");
+
+        assert!(error.to_string().contains("unknown parameter `related`"));
+    }
+
+    #[test]
+    fn search_tool_rejects_boolean_semantic_param() {
+        let runtime = OrbitRuntime::in_memory().expect("build runtime");
+        let mut input = serde_json::Map::new();
+        input.insert("query".to_string(), json!("anything"));
+        input.insert("semantic".to_string(), json!(true));
+        let error = search(&runtime, Value::Object(input))
+            .expect_err("semantic parameter should require a task ID string");
+
+        assert!(error.to_string().contains("`semantic` must be a string"));
+    }
 }

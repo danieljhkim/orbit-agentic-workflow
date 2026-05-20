@@ -195,7 +195,7 @@ Compare to the analogous knowledge-graph crate: `orbit-knowledge` owns its data 
 **Consequences.**
 - Re-running `orbit semantic install` after upgrading Orbit naturally refreshes stale companions without requiring users to uninstall first.
 - Task mutation output stays trustworthy: background indexing remains best-effort and cannot leak companion stderr into successful `task.add` / `task.update` command output.
-- Direct commands such as `orbit search --semantic`, `orbit search --related`, and `orbit semantic index` still show actionable companion stderr because they use the inherited-stderr path.
+- Direct commands such as `orbit search --hybrid`, `orbit search --semantic <task-id>`, and `orbit semantic index` still show actionable companion stderr because they use the inherited-stderr path.
 - Cost: install now trusts the companion's `--version-info` protocol. If a broken companion cannot answer the probe, Orbit conservatively replaces it, which can redownload or recopy the binary even when the file might have been usable for embeddings.
 
 ---
@@ -206,13 +206,29 @@ Compare to the analogous knowledge-graph crate: `orbit-knowledge` owns its data 
 
 **Context.** `orbit semantic` mixed embedding-companion lifecycle (`install`, `uninstall`, `stats`, `index`) with user query verbs (`search`, `related`). The phase-1 search engine now owns both lexical and vector ranking, so leaving queries under `semantic` would make users choose an implementation detail before they search.
 
-**Decision.** `orbit semantic` is only the lifecycle namespace for the local embedding companion. `orbit search` is the unified query surface; lexical ranking is the default, `--semantic` opts into hybrid BM25 plus cosine for task vectors, and `--related <id>` performs cosine-neighbor lookup for indexed tasks.
+**Decision.** `orbit semantic` is only the lifecycle namespace for the local embedding companion. `orbit search` is the unified query surface; lexical ranking is the default, `--hybrid` opts into hybrid BM25 plus cosine for task vectors, and `--semantic <id>` performs cosine-neighbor lookup for indexed tasks.
 
 **Consequences.**
 - Establishes a precedent that lifecycle namespaces manage local subsystems while query namespaces describe what users are trying to do.
 - `orbit semantic search`, `orbit semantic related`, and `orbit semantic reindex` are hard breaks with no shim because there are no known external consumers yet.
 - Per-domain search commands stay untouched for phase 1; a later task decides whether they thin-wrap `orbit search`, demote to filters, or retire.
-- Vector index coverage remains task-only today; docs, learnings, and ADRs continue to use lexical matching even when `--semantic` is set.
+- Vector index coverage remains task-only today; docs, learnings, and ADRs continue to use lexical matching even when `--hybrid` is set.
+
+---
+
+## ADR-0175 — Rename search mode and neighbor flags
+
+**Status:** Accepted · 2026-05-20 · [ORB-00204]
+
+**Context.** Phase 1 used the semantic name for the hybrid BM25 plus cosine mode toggle and a separate related-task flag for cosine-neighbor lookup. That inverted the intuitive reading of semantic search: users expect semantic plus an ID to mean nearest neighbors, while hybrid is the honest name for the ranking algorithm.
+
+**Decision.** Rename the free-text ranking toggle to `--hybrid` / `hybrid: true` and rename task-neighbor lookup to `--semantic <id>` / `semantic: "<id>"`. Keep lexical search as the default and report JSON mode `hybrid` for hybrid free-text search and `neighbor` for cosine-only task-neighbor lookup.
+
+**Consequences.**
+- The CLI and MCP surfaces match user vocabulary before external consumers depend on the phase-1 names.
+- Historical phase-1 audit payloads that carried `semantic: true` are orphaned by the hard break, matching the no-shim policy for this young surface.
+- Documentation and packaged skills must distinguish the `orbit semantic` lifecycle command from the `--semantic <id>` search flag.
+- Cost: Agents and docs written against phase 1 need a one-time rename sweep, and ORB-00202 may need a rebase because it edits adjacent search surfaces.
 - Cost: historical audit event names `semantic.search` and `semantic.related` become orphaned event types, accepted because no external audit-history consumers exist yet.
 
 ---
@@ -224,5 +240,6 @@ Compare to the analogous knowledge-graph crate: `orbit-knowledge` owns its data 
 - [T20260510-20] — Refactor: relocate orbit-search ownership to orbit-embed (vector store + commands). The task that accepted and implemented ADR-007.
 - [T20260510-26] — Make semantic companion install/update quiet and version-aware. The task that accepted and implemented ADR-008.
 - [ORB-00196] — Split `orbit semantic` lifecycle from the unified `orbit search` query surface. The task that accepted and implemented ADR-0174.
+- [ORB-00204] — Rename `orbit search` flags to `--hybrid` for free-text vector ranking and `--semantic <id>` for task-neighbor lookup. The task that accepted and implemented ADR-0175.
 
 Resolve any task above with `orbit task show <ID>` or `git log --grep=<ID>`.
