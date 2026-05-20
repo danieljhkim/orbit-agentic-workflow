@@ -86,9 +86,18 @@ fn assert_root_fields(value: &Value, shared_root: &Path, local_root: &Path) {
     let local = local_root.to_string_lossy();
     assert_eq!(string_field(value, "shared_root"), shared.as_ref());
     assert_eq!(string_field(value, "local_root"), local.as_ref());
-    assert_eq!(string_field(value, "workspace_root"), shared.as_ref());
-    assert_eq!(string_field(value, "root"), shared.as_ref());
-    assert_eq!(string_field(value, "selected_root"), shared.as_ref());
+    assert!(
+        value.get("workspace_root").is_none(),
+        "legacy `workspace_root` alias must be removed from `config show --json` output (use `shared_root`)"
+    );
+    assert!(
+        value.get("root").is_none(),
+        "legacy `root` alias must be removed from `config show --json` output (use `shared_root`)"
+    );
+    assert!(
+        value.get("selected_root").is_none(),
+        "legacy `selected_root` alias must be removed from `config show --json` output (use `shared_root`)"
+    );
 }
 
 fn string_field<'a>(value: &'a Value, field: &str) -> &'a str {
