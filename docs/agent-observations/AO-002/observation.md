@@ -121,8 +121,8 @@ Cross-cutting commands. Per-experiment commands and per-experiment artifacts liv
 jq '.runs[] | select(.roles | to_entries[] | .value.family == "gemini")' \
   .orbit/state/scoreboard/duel_plan.json
 
-# Per-agent rollup
-orbit scoreboard summary
+# Per-agent rollup. The retired CLI summary command has been replaced by the dashboard API.
+curl -s http://127.0.0.1:7879/api/scoreboard >/dev/null
 jq '.agents.gemini' .orbit/state/scoreboard/summary.json
 
 # Tool-call audit for Gemini-family roles

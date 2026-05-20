@@ -510,22 +510,6 @@ pub fn extract_command_meta(cmd: &Commands) -> CommandMeta {
                 job_run_id: None,
             }
         }
-        Commands::Scoreboard(cmd) => {
-            use crate::command::scoreboard::ScoreboardSubcommand;
-            let sub = match &cmd.command {
-                ScoreboardSubcommand::Summary(_) => "summary",
-            };
-            CommandMeta {
-                command: "scoreboard".to_string(),
-                subcommand: Some(sub.to_string()),
-                tool_name: None,
-                target_type: Some("scoreboard".to_string()),
-                target_id: None,
-                role: "admin".to_string(),
-                arguments_json: None,
-                job_run_id: None,
-            }
-        }
         Commands::Graph(cmd) => {
             let sub = match &cmd.subcommand {
                 crate::command::graph::GraphSubcommand::Build(_) => "build",
