@@ -2,9 +2,9 @@ use std::path::Path;
 use std::sync::Arc;
 
 use orbit_common::types::{Crew, WorkspacePaths};
-use orbit_embed::{EmbedWorker, VectorStore};
 use orbit_engine::PrConfig;
 use orbit_policy::PolicyEngine;
+use orbit_search::{EmbedWorker, VectorStore};
 use orbit_store::{
     AdrStoreBackend, AuditEventStoreBackend, ExecutorDefStoreBackend, JobRunStoreBackend,
     LearningStoreBackend, PolicyDefStoreBackend, TaskArtifactStoreBackend,

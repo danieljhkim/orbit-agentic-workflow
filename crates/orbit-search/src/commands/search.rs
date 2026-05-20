@@ -104,7 +104,8 @@ pub(crate) fn run_with_embedder(
                 cosine_kind.as_deref(),
             )
         });
-        let bm25_handle = scope.spawn(|| bm25_top_k(&bm25_store, &query_for_bm25, retriever_limit));
+        let bm25_handle =
+            scope.spawn(|| bm25_top_k(&bm25_store, &query_for_bm25, kind, retriever_limit));
         let cosine = cosine_handle
             .join()
             .map_err(|_| OrbitError::Execution("cosine retriever panicked".to_string()))?;
@@ -122,6 +123,7 @@ pub(crate) fn run_with_embedder(
         .map(|hit| {
             let snippet = snippet_for_hit(
                 vector_store,
+                &hit.source_kind,
                 &hit.source_id,
                 &hit.best_field,
                 hit.best_chunk_idx,

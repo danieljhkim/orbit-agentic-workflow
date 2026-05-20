@@ -9,7 +9,7 @@ Use `orbit.semantic.*` when literal substring matching is the wrong lens — whe
 
 ## Companion Precondition
 
-The semantic backend lives in a separately-installed `orbit-embed-companion` binary. **All `orbit.semantic.*` calls fail with a clear error pointing at `orbit semantic install` if the companion is missing.** If you hit that error and the operator hasn't opted into semantic search, fall back to `orbit.task.search` (lexical) and continue — do not block on the missing companion.
+The semantic backend lives in a separately-installed `orbit-search-companion` binary. **All `orbit.semantic.*` calls fail with a clear error pointing at `orbit semantic install` if the companion is missing.** If you hit that error and the operator hasn't opted into semantic search, fall back to `orbit.task.search` (lexical) and continue — do not block on the missing companion.
 
 ## Tool Invocation
 
@@ -57,7 +57,7 @@ Both tools return `results: [{source_id, source_kind, best_field, score, score_b
 
 ## Index Freshness
 
-Indexing happens automatically on task mutation; the worker is in `crates/orbit-embed/src/vector/worker.rs`. If `semantic.search` returns stale results after recent task edits, the operator can force a rebuild via `orbit semantic reindex`. As an agent, do not call `reindex` reflexively — only escalate if results are demonstrably stale during the same session.
+Indexing happens automatically on task mutation; the worker is in `crates/orbit-search/src/vector/worker.rs`. If `semantic.search` returns stale results after recent task edits, the operator can force a rebuild via `orbit semantic reindex`. As an agent, do not call `reindex` reflexively — only escalate if results are demonstrably stale during the same session.
 
 ## Common Mistakes
 

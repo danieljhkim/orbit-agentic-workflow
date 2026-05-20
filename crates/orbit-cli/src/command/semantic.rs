@@ -17,7 +17,7 @@ pub struct SemanticCommand {
 
 #[derive(Subcommand)]
 pub enum SemanticSubcommand {
-    /// Download the embedding companion and selected model
+    /// Download the search companion and selected model
     Install(SemanticInstallArgs),
     /// Remove installed semantic-search companion and/or models
     Uninstall(SemanticUninstallArgs),

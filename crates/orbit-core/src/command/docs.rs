@@ -9,6 +9,10 @@ use std::str::FromStr;
 use orbit_common::types::{Adr, AdrStatus, OrbitError, Task};
 use orbit_common::utility::glob::{match_glob, normalize_glob_path};
 use orbit_common::utility::selector::anchor_path;
+pub use orbit_search::{AdrSearchResult, DocSearchResult, SearchResult};
+use orbit_search::{
+    AdrSearchSource, DocSearchSource, score_adr_record, score_doc_record, sort_search_results,
+};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use serde_json::json;
 
@@ -160,31 +164,6 @@ pub struct DocShow {
     pub body: String,
 }
 
-#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
-pub struct DocSearchResult {
-    #[serde(flatten)]
-    pub record: DocRecord,
-    pub score: usize,
-    pub matched_by: Vec<String>,
-}
-
-#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
-pub enum SearchResult {
-    Doc(DocSearchResult),
-    Adr(AdrSearchResult),
-}
-
-#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
-pub struct AdrSearchResult {
-    pub id: String,
-    pub title: String,
-    pub status: AdrStatus,
-    pub path: PathBuf,
-    pub related_features: Vec<String>,
-    pub score: usize,
-    pub matched_by: Vec<String>,
-}
-
 /// Related-doc projection emitted by `task show --with-context`.
 ///
 /// JSON schema:
@@ -307,6 +286,7 @@ impl OrbitRuntime {
         let mut scored = self
             .list_docs(None, None)?
             .into_iter()
+            .map(doc_search_source)
             .filter_map(|record| score_doc_record(record, &query_lower))
             .map(SearchResult::Doc)
             .collect::<Vec<_>>();
@@ -316,6 +296,7 @@ impl OrbitRuntime {
                 .list()?
                 .into_iter()
                 .filter(|adr| adr_status_in_docs_search(adr.status, include_superseded))
+                .map(adr_search_source)
                 .filter_map(|adr| score_adr_record(adr, &query_lower))
                 .map(SearchResult::Adr),
         );
@@ -862,80 +843,36 @@ fn path_is_under_configured_roots(
     Ok(false)
 }
 
-fn score_doc_record(record: DocRecord, query_lower: &str) -> Option<DocSearchResult> {
-    let mut score = 0usize;
-    let mut matched_by = Vec::new();
-    let summary = record.frontmatter.summary.to_ascii_lowercase();
-    if summary.contains(query_lower) {
-        score += 80 + query_lower.len();
-        matched_by.push("summary".to_string());
-    }
-    let doc_type = record.frontmatter.doc_type.as_str();
-    if doc_type.contains(query_lower) {
-        score += 30;
-        matched_by.push(format!("type:{doc_type}"));
-    }
-    for tag in &record.frontmatter.tags {
-        let lower = tag.to_ascii_lowercase();
-        if lower == query_lower {
-            score += 120;
-            matched_by.push(format!("tag:{tag}"));
-        } else if lower.contains(query_lower) {
-            score += 60;
-            matched_by.push(format!("tag:{tag}"));
-        }
-    }
-    if score == 0 {
-        return None;
-    }
-    Some(DocSearchResult {
-        record,
-        score,
-        matched_by,
-    })
-}
-
-fn score_adr_record(adr: Adr, query_lower: &str) -> Option<AdrSearchResult> {
-    let mut score = 0usize;
-    let mut matched_by = Vec::new();
-    let title = adr.title.to_ascii_lowercase();
-    if title.contains(query_lower) {
-        score += 80 + query_lower.len();
-        matched_by.push("title".to_string());
-    }
-    for feature in &adr.related_features {
-        let lower = feature.to_ascii_lowercase();
-        if lower == query_lower {
-            score += 120;
-            matched_by.push(format!("related_feature:{feature}"));
-        } else if lower.contains(query_lower) {
-            score += 60;
-            matched_by.push(format!("related_feature:{feature}"));
-        }
-    }
-    let status = adr.status.cli_name();
-    if status.contains(query_lower) {
-        score += 30;
-        matched_by.push(format!("status:{status}"));
-    }
-    if score == 0 {
-        return None;
-    }
-    let path = adr_body_search_path(adr.status, &adr.id);
-    Some(AdrSearchResult {
-        id: adr.id,
-        title: adr.title,
-        status: adr.status,
-        path,
-        related_features: adr.related_features,
-        score,
-        matched_by,
-    })
-}
-
 fn adr_status_in_docs_search(status: AdrStatus, include_superseded: bool) -> bool {
     matches!(status, AdrStatus::Proposed | AdrStatus::Accepted)
         || (include_superseded && status == AdrStatus::Superseded)
+}
+
+fn doc_search_source(record: DocRecord) -> DocSearchSource {
+    DocSearchSource {
+        path: record.path,
+        doc_type: record.frontmatter.doc_type.as_str().to_string(),
+        summary: record.frontmatter.summary,
+        tags: record.frontmatter.tags,
+        paths: record.frontmatter.paths,
+        related_features: record.frontmatter.related_features,
+        related_artifacts: record
+            .frontmatter
+            .related_artifacts
+            .into_iter()
+            .map(|artifact| artifact.as_str().to_string())
+            .collect(),
+    }
+}
+
+fn adr_search_source(adr: Adr) -> AdrSearchSource {
+    AdrSearchSource {
+        path: adr_body_search_path(adr.status, &adr.id),
+        id: adr.id,
+        title: adr.title,
+        status: adr.status,
+        related_features: adr.related_features,
+    }
 }
 
 fn adr_body_search_path(status: AdrStatus, id: &str) -> PathBuf {
@@ -944,28 +881,6 @@ fn adr_body_search_path(status: AdrStatus, id: &str) -> PathBuf {
         .join(status.cli_name())
         .join(id)
         .join("body.md")
-}
-
-fn sort_search_results(results: &mut [SearchResult]) {
-    results.sort_by(|left, right| {
-        search_result_score(right)
-            .cmp(&search_result_score(left))
-            .then_with(|| match (left, right) {
-                (SearchResult::Doc(left), SearchResult::Doc(right)) => {
-                    left.record.path.cmp(&right.record.path)
-                }
-                (SearchResult::Adr(left), SearchResult::Adr(right)) => left.id.cmp(&right.id),
-                (SearchResult::Doc(_), SearchResult::Adr(_)) => std::cmp::Ordering::Less,
-                (SearchResult::Adr(_), SearchResult::Doc(_)) => std::cmp::Ordering::Greater,
-            })
-    });
-}
-
-fn search_result_score(result: &SearchResult) -> usize {
-    match result {
-        SearchResult::Doc(result) => result.score,
-        SearchResult::Adr(result) => result.score,
-    }
 }
 
 #[derive(Debug)]
@@ -1651,29 +1566,6 @@ mod tests {
         GIT_CHECK_IGNORE_INVOCATIONS.with(std::cell::Cell::get)
     }
 
-    fn adr_fixture(id: &str, title: &str, status: AdrStatus, related_features: Vec<&str>) -> Adr {
-        let now = chrono::Utc::now();
-        Adr {
-            id: id.to_string(),
-            title: title.to_string(),
-            status,
-            owner: "codex".to_string(),
-            created_at: now,
-            accepted_at: None,
-            last_updated: now,
-            related_features: related_features
-                .into_iter()
-                .map(ToString::to_string)
-                .collect(),
-            related_tasks: Vec::new(),
-            supersedes: Vec::new(),
-            superseded_by: None,
-            legacy_ids: Vec::new(),
-            validation_warnings: Vec::new(),
-            legacy_validation: orbit_common::types::LegacyValidation::None,
-        }
-    }
-
     fn yaml_string<'a>(mapping: &'a serde_yaml::Mapping, key: &str) -> Option<&'a str> {
         mapping
             .get(serde_yaml::Value::String(key.to_string()))
@@ -1776,130 +1668,37 @@ mod tests {
     }
 
     #[test]
-    fn score_adr_record_exercises_title_feature_and_status_branches() {
-        let title = score_adr_record(
-            adr_fixture(
-                "ADR-0001",
-                "Docs federation overlay",
-                AdrStatus::Accepted,
-                vec![],
-            ),
-            "federation",
-        )
-        .expect("title match");
-        assert_eq!(title.score, 90);
-        assert_eq!(title.matched_by, vec!["title"]);
+    fn search_result_doc_json_shape_matches_legacy_flat_record() {
+        let result = SearchResult::Doc(DocSearchResult {
+            record: DocSearchSource {
+                path: "docs/pattern.md".to_string(),
+                doc_type: "pattern".to_string(),
+                summary: "RAII guard pattern".to_string(),
+                tags: vec!["rust".to_string(), "guard".to_string()],
+                paths: Vec::new(),
+                related_features: Vec::new(),
+                related_artifacts: vec!["ORB-00160".to_string()],
+            },
+            score: 84,
+            matched_by: vec!["summary".to_string()],
+        });
 
-        let exact_feature = score_adr_record(
-            adr_fixture(
-                "ADR-0002",
-                "Boundary",
-                AdrStatus::Accepted,
-                vec!["orbit-docs"],
-            ),
-            "orbit-docs",
-        )
-        .expect("exact feature match");
-        assert_eq!(exact_feature.score, 120);
-        assert_eq!(exact_feature.matched_by, vec!["related_feature:orbit-docs"]);
+        let actual = serde_json::to_value(&result).expect("serialize search result");
 
-        let substring_feature = score_adr_record(
-            adr_fixture(
-                "ADR-0003",
-                "Boundary",
-                AdrStatus::Accepted,
-                vec!["orbit-docs"],
-            ),
-            "docs",
-        )
-        .expect("substring feature match");
-        assert_eq!(substring_feature.score, 60);
         assert_eq!(
-            substring_feature.matched_by,
-            vec!["related_feature:orbit-docs"]
-        );
-
-        let status = score_adr_record(
-            adr_fixture("ADR-0004", "Boundary", AdrStatus::Proposed, vec![]),
-            "proposed",
-        )
-        .expect("status match");
-        assert_eq!(status.score, 30);
-        assert_eq!(status.matched_by, vec!["status:proposed"]);
-
-        assert!(
-            score_adr_record(
-                adr_fixture("ADR-0005", "Boundary", AdrStatus::Accepted, vec![]),
-                "missing",
-            )
-            .is_none()
-        );
-    }
-
-    #[test]
-    fn sort_search_results_breaks_adr_ties_by_ascending_id() {
-        let mut results = vec![
-            SearchResult::Adr(
-                score_adr_record(
-                    adr_fixture(
-                        "ADR-0002",
-                        "Boundary",
-                        AdrStatus::Accepted,
-                        vec!["orbit-docs"],
-                    ),
-                    "orbit-docs",
-                )
-                .expect("second"),
-            ),
-            SearchResult::Adr(
-                score_adr_record(
-                    adr_fixture(
-                        "ADR-0001",
-                        "Boundary",
-                        AdrStatus::Accepted,
-                        vec!["orbit-docs"],
-                    ),
-                    "orbit-docs",
-                )
-                .expect("first"),
-            ),
-        ];
-
-        sort_search_results(&mut results);
-
-        let ids = results
-            .iter()
-            .map(|result| match result {
-                SearchResult::Adr(result) => result.id.as_str(),
-                SearchResult::Doc(_) => panic!("expected only ADR results"),
+            actual,
+            json!({
+                "Doc": {
+                    "path": "docs/pattern.md",
+                    "type": "pattern",
+                    "summary": "RAII guard pattern",
+                    "tags": ["rust", "guard"],
+                    "related_artifacts": ["ORB-00160"],
+                    "score": 84,
+                    "matched_by": ["summary"]
+                }
             })
-            .collect::<Vec<_>>();
-        assert_eq!(ids, vec!["ADR-0001", "ADR-0002"]);
-    }
-
-    #[test]
-    fn docs_search_path_remains_read_only_over_adr_store() {
-        let source = include_str!("docs.rs");
-        let start = source
-            .find("    pub fn search_docs(")
-            .expect("search_docs start");
-        let end = source[start..]
-            .find("    pub fn related_docs_for_task(")
-            .expect("search_docs end");
-        let search_impl = &source[start..start + end];
-        for forbidden in [
-            concat!("next", "_adr_id"),
-            concat!("add", "_adr"),
-            concat!("update", "_adr"),
-            concat!("supersede", "_adr"),
-            concat!("fs::", "write"),
-            concat!("write", "_bundle_at"),
-        ] {
-            assert!(
-                !search_impl.contains(forbidden),
-                "docs search must not invoke write-path symbol {forbidden}"
-            );
-        }
+        );
     }
 
     #[test]

@@ -1,8 +1,8 @@
-//! Discovery of the installed embedding companion binary.
+//! Discovery of the installed search companion binary.
 //!
 //! `CompanionPaths` describes the on-disk layout under `~/.orbit/embed/`,
 //! and `locate_companion()` resolves a callable path by checking, in order,
-//! the `ORBIT_EMBED_COMPANION` env override, the standard install location,
+//! the `ORBIT_SEARCH_COMPANION` env override, the standard install location,
 //! then `$PATH`. When all three miss, the error is the actionable
 //! `CompanionNotInstalled` shape so callers can surface a clean install hint.
 
@@ -51,9 +51,9 @@ impl CompanionPaths {
 
 pub fn platform_companion_filename() -> String {
     if cfg!(windows) {
-        format!("orbit-embed-companion-{}.exe", platform_id())
+        format!("orbit-search-companion-{}.exe", platform_id())
     } else {
-        format!("orbit-embed-companion-{}", platform_id())
+        format!("orbit-search-companion-{}", platform_id())
     }
 }
 
@@ -69,7 +69,7 @@ pub fn platform_id() -> &'static str {
 }
 
 pub fn locate_companion() -> Result<PathBuf, OrbitError> {
-    if let Ok(path) = env::var("ORBIT_EMBED_COMPANION") {
+    if let Ok(path) = env::var("ORBIT_SEARCH_COMPANION") {
         let path = PathBuf::from(path);
         if is_executable_file(&path) {
             return Ok(path);
@@ -95,10 +95,10 @@ pub fn locate_companion() -> Result<PathBuf, OrbitError> {
 }
 
 fn path_candidate_names() -> Vec<OsString> {
-    let mut names = vec![OsString::from("orbit-embed-companion")];
+    let mut names = vec![OsString::from("orbit-search-companion")];
     names.push(OsString::from(platform_companion_filename()));
     if cfg!(windows) {
-        names.push(OsString::from("orbit-embed-companion.exe"));
+        names.push(OsString::from("orbit-search-companion.exe"));
     }
     names
 }

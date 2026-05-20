@@ -1,5 +1,5 @@
 use orbit_common::types::{OrbitError, optional_string_alias, optional_u32_alias, required_string};
-use orbit_embed::{SemanticRelatedParams, SemanticSearchParams};
+use orbit_search::{SemanticRelatedParams, SemanticSearchParams};
 use serde_json::Value;
 
 use crate::OrbitRuntime;

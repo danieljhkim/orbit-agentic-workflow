@@ -136,8 +136,9 @@ mod tests {
             .query_row(
                 r#"
                     SELECT COUNT(*)
-                    FROM tasks_fts
-                    WHERE source_id = 'T1'
+                    FROM corpus_fts
+                    WHERE source_kind = 'task'
+                      AND source_id = 'T1'
                       AND field IN ('purpose', 'summary', 'acceptance_criteria')
                 "#,
                 [],

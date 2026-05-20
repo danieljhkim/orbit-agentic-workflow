@@ -10,7 +10,7 @@ use std::collections::BTreeSet;
 use orbit_common::types::OrbitError;
 use rusqlite::params;
 
-use super::{SOURCE_KIND_TASK, VectorStore};
+use super::VectorStore;
 use crate::vector::{SemanticStats, SourceModelCount};
 
 impl VectorStore {
@@ -24,13 +24,11 @@ impl VectorStore {
             params![source_kind, source_id],
         )
         .map_err(|error| OrbitError::Store(error.to_string()))?;
-        if source_kind == SOURCE_KIND_TASK {
-            conn.execute(
-                "DELETE FROM tasks_fts WHERE source_id = ?1",
-                params![source_id],
-            )
-            .map_err(|error| OrbitError::Store(error.to_string()))?;
-        }
+        conn.execute(
+            "DELETE FROM corpus_fts WHERE source_kind = ?1 AND source_id = ?2",
+            params![source_kind, source_id],
+        )
+        .map_err(|error| OrbitError::Store(error.to_string()))?;
         Ok(())
     }
 
@@ -109,7 +107,7 @@ mod tests {
             .query_row("SELECT COUNT(*) FROM embeddings", [], |row| row.get(0))
             .unwrap();
         let fts: i64 = conn
-            .query_row("SELECT COUNT(*) FROM tasks_fts", [], |row| row.get(0))
+            .query_row("SELECT COUNT(*) FROM corpus_fts", [], |row| row.get(0))
             .unwrap();
         assert_eq!(embeddings, 0);
         assert_eq!(fts, 0);

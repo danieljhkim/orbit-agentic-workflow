@@ -199,8 +199,8 @@ impl Execute for DocsSearchArgs {
                         table.add_row(vec![
                             "doc".to_string(),
                             result.record.path,
-                            result.record.frontmatter.doc_type.to_string(),
-                            result.record.frontmatter.summary,
+                            result.record.doc_type,
+                            result.record.summary,
                             result.matched_by.join(", "),
                         ]);
                     }
