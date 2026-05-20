@@ -1,6 +1,5 @@
 pub mod adr;
 pub mod definitions;
-pub mod design;
 pub mod docs;
 pub mod environment;
 pub mod hook;
@@ -51,7 +50,6 @@ Operate:
   run         Run a workflow (ship, duel-plan, job)
   task        Create, update, and manage tasks
   adr         Architecture Decision Record operations
-  design      Design doc operations
   docs        Search and manage the indexed docs corpus
   learning    Create, search, and curate project learnings
   semantic    Manage local semantic-search indexing
@@ -98,7 +96,6 @@ pub enum Commands {
     Run(run::RunCommand),
     Task(Box<task::TaskCommand>),
     Adr(adr::AdrCommand),
-    Design(design::DesignCommand),
     Docs(docs::DocsCommand),
     Learning(learning::LearningCommand),
     Semantic(semantic::SemanticCommand),
@@ -140,7 +137,6 @@ impl Execute for Commands {
             Commands::Run(cmd) => cmd.execute(runtime),
             Commands::Task(cmd) => (*cmd).execute(runtime),
             Commands::Adr(cmd) => cmd.execute(runtime),
-            Commands::Design(cmd) => cmd.execute(runtime),
             Commands::Docs(cmd) => cmd.execute(runtime),
             Commands::Learning(cmd) => cmd.execute(runtime),
             Commands::Semantic(cmd) => cmd.execute(runtime),
@@ -169,8 +165,8 @@ mod tests {
     use clap::Parser;
 
     use super::{
-        Cli, Commands, design::DesignSubcommand, hook::HookSubcommand, mcp::McpSubcommand,
-        semantic::SemanticSubcommand, web::WebSubcommand,
+        Cli, Commands, hook::HookSubcommand, mcp::McpSubcommand, semantic::SemanticSubcommand,
+        web::WebSubcommand,
     };
 
     #[test]
@@ -266,18 +262,6 @@ mod tests {
                 _ => panic!("expected semantic related"),
             },
             _ => panic!("expected top-level semantic command"),
-        }
-    }
-
-    #[test]
-    fn cli_parses_design_list() {
-        let cli = Cli::parse_from(["orbit", "design", "list"]);
-        match cli.command {
-            Commands::Design(command) => match command.command {
-                DesignSubcommand::List(_) => {}
-                _ => panic!("expected design list"),
-            },
-            _ => panic!("expected top-level design command"),
         }
     }
 

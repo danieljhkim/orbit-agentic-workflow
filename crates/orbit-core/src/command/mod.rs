@@ -18,7 +18,6 @@ pub mod adr_migration;
 pub mod agent_rules;
 pub mod audit_event;
 pub mod backend_resolver;
-pub mod design;
 pub mod diagnostics;
 pub mod docs;
 pub mod executor;

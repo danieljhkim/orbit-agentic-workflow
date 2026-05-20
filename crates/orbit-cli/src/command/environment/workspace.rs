@@ -2,9 +2,9 @@ use chrono::Utc;
 use clap::{Args, Subcommand};
 use orbit_common::types::{Workspace, WorkspaceStatus};
 use orbit_core::command::agent_rules::{InjectionAction, inject_agent_rules};
-use orbit_core::command::design::seed_design_conventions;
 use orbit_core::command::init::{
     InitOptions, build_initial_graph, init_workspace_at_root, seed_default_orbitignore,
+    seed_design_conventions,
 };
 use orbit_core::workspace_registry;
 use orbit_core::{OrbitError, OrbitRuntime};
