@@ -40,7 +40,7 @@ The hard constraint that shapes the design: **the system must be discoverable ac
 
 A first-class Orbit resource, parallel to `task`. Each record carries:
 
-- `id` — `L20260509-NNNN`, allocated like task IDs.
+- `id` — `L-NNNN`, allocated like task IDs.
 - `scope` — what triggers the learning. Phase 1: path globs + tags. Phase 2 will layer semantic similarity on top ([4_decisions.md ADR-004](./4_decisions.md)).
 - `summary` — one-line rule of thumb (the part that fits in a `<system-reminder>`).
 - `body` — multi-line markdown: the rule, the reason, how to apply it.

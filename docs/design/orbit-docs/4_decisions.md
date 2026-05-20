@@ -55,7 +55,7 @@ ADR allocation is non-negotiable: the global ID is minted via `orbit.adr.add` *b
 
 **Status:** Proposed · 2026-05 · [ORB-00163]
 
-**Context.** Orbit-docs frontmatter needs a way to cross-link from a doc to any other allocation-bearing artifact: a task (`ORB-NNNNN`), a learning (`L<YYYYMMDD>-N`), a friction (`F<YYYY>-<MM>-<NNN>`), or an ADR (`ADR-NNNN`). The candidate shapes were (a) an array of `{type, id}` objects, (b) a single ambiguous `references` field, or (c) ID-prefix dispatch over a flat string array.
+**Context.** Orbit-docs frontmatter needs a way to cross-link from a doc to any other allocation-bearing artifact: a task (`ORB-NNNNN`), a learning (`L-NNNN`), a friction (`F<YYYY>-<MM>-<NNN>`), or an ADR (`ADR-NNNN`). The candidate shapes were (a) an array of `{type, id}` objects, (b) a single ambiguous `references` field, or (c) ID-prefix dispatch over a flat string array.
 
 **Decision.** `related_artifacts` is a flat string array. The parser dispatches on the ID prefix to type the reference: `ORB-` → task, `L<digits>-<digits>` → learning, `F<digits>-<digits>-<digits>` → friction, `ADR-` → ADR. Unknown prefixes are a hard parse error (not silently kept as opaque strings).
 

@@ -67,7 +67,7 @@ See the `orbit` skill for the full mapping rule and surface coverage. Examples b
 
 The full `relations` array accepts these typed variants. Only the first two accept non-`ORB-` targets:
 
-- `produces` — this task created the target artifact during execution. Targets: `ORB-NNNNN`, `F<YYYY>-<MM>-<NNN>` (friction), `L<YYYYMMDD>-N` (learning), `ADR-NNNN`. Tracking-only in v1 (no lifecycle side-effect).
+- `produces` — this task created the target artifact during execution. Targets: `ORB-NNNNN`, `F<YYYY>-<MM>-<NNN>` (friction), `L-NNNN` (learning), `ADR-NNNN`. Tracking-only in v1 (no lifecycle side-effect).
 - `resolves` — this task closes or supersedes the target artifact. Same target set as `produces`. **Side-effect when target is a friction**: auto-resolve when the task status is `done` through approval, direct update, or automation handoff (see Tier 1 above). Other target kinds are tracked but not state-mutated in v1.
 - `blocked_by`, `child_of`, `spawned_from`, `regression_from`, `supersedes`, `related_to` — task-only. Target must be `ORB-NNNNN`; cross-artifact targets are rejected by validation.
 

@@ -77,12 +77,12 @@ The tradeoff is straightforward: stability of cross-references vs. human-authore
 |-----------|-----------|------------|
 | Granularity | Sub-page rules with known failure modes | Multi-paragraph explanatory context |
 | Storage | `.orbit/learnings/<id>.yaml` + SQLite index | `docs/**/*.md`, no on-disk store |
-| Allocation | `orbit.learning.add` mints `L<YYYYMMDD>-N` IDs | Author writes a file; no ID allocation |
+| Allocation | `orbit.learning.add` mints `L-NNNN` IDs | Author writes a file; no ID allocation |
 | Lifecycle | `update`, `supersede`, `prune`, `upvote` | `add` a root, write files; no supersede flow |
 | Discovery | Push-first (scope-glob injection) | Pull-first (search / show); push is downstream |
 | Cross-references | `related_features`, `evidence` | `related_features`, `related_artifacts`, `paths` |
 
-The boundary (rule-with-failure-mode vs. explanatory-context) is the load-bearing decision. Both surfaces being separate, with explicit cross-references via `related_artifacts: [L<YYYYMMDD>-N]`, is the v1 shape.
+The boundary (rule-with-failure-mode vs. explanatory-context) is the load-bearing decision. Both surfaces being separate, with explicit cross-references via `related_artifacts: [L-NNNN]`, is the v1 shape.
 
 ### 2.2 Orbit ADRs
 

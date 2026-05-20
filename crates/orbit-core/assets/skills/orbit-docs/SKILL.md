@@ -42,7 +42,7 @@ Orbit-docs indexes any configured Markdown root with valid frontmatter; it does 
 
 Learning = a load-bearing rule with a known failure mode. It is managed through `orbit.learning.*`, has scope-glob push injection, and can be updated, superseded, or pruned.
 
-Doc = explanatory context. It is PR-reviewed Markdown, retrieved through `orbit.docs.*`, and has no supersede flow. Link to load-bearing learnings with `related_artifacts: [L<YYYYMMDD>-N]` when useful.
+Doc = explanatory context. It is PR-reviewed Markdown, retrieved through `orbit.docs.*`, and has no supersede flow. Link to load-bearing learnings with `related_artifacts: [L-NNNN]` when useful.
 
 ## Routing Notes
 

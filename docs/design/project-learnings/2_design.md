@@ -50,7 +50,7 @@ No cross-crate dependencies that violate the architecture diagram in [CLAUDE.md]
 Each learning owns a directory under `.orbit/learnings/<id>/`, mirroring the task bundle layout. The source-of-truth YAML lives at `.orbit/learnings/<id>/learning.yaml`; per-learning sidecars such as `votes.jsonl` live beside it without polluting the root:
 
 ```yaml
-id: L20260509-0001
+id: L-0001
 schemaVersion: 1
 status: active                    # active | superseded
 created_at: 2026-05-09T18:00:00Z
@@ -104,7 +104,7 @@ A SQLite table `learnings_index` mirrors a few columns for fast scope matching, 
 
 ```sql
 CREATE TABLE learnings_index (
-    id          TEXT PRIMARY KEY,         -- L20260509-0001
+    id          TEXT PRIMARY KEY,         -- L-0001
     status      TEXT NOT NULL,            -- "active" | "superseded"
     paths       TEXT NOT NULL,            -- JSON array of glob patterns
     tags        TEXT NOT NULL,            -- JSON array of tags
@@ -123,7 +123,7 @@ Vote rows are source-of-truth sidecars, not SQLite projections in v1. `orbit lea
 
 ### 2.3 ID format
 
-`L<YYYYMMDD>-<NNNN>` — same shape as task IDs, different prefix. Allocated by `orbit.learning.add`, never invented by agents (same rule as task IDs).
+`L-NNNN` — same shape as task IDs, different prefix. Allocated by `orbit.learning.add`, never invented by agents (same rule as task IDs).
 
 ---
 
@@ -178,9 +178,9 @@ Three layers, from coarsest to finest. Each layer adds precision on top of the l
    <system-reminder>
    Project learnings relevant to this task:
 
-   - [L20260509-0001] Never declare a perf win on latency alone — verify
+   - [L-0001] Never declare a perf win on latency alone — verify
      output equivalence before freezing a result.
-   - [L20260507-0014] When editing tree-sitter extractors, the …
+   - [L-0014] When editing tree-sitter extractors, the …
 
    Read full body via `orbit.learning.show <id>` if needed.
    </system-reminder>
@@ -201,7 +201,7 @@ For tools whose arguments or responses reference file paths — `orbit_graph_sho
   "result": { ... },
   "learnings": [
     {
-      "id": "L20260509-0001",
+      "id": "L-0001",
       "summary": "Never declare a perf win on latency alone — ..."
     }
   ]
@@ -278,7 +278,7 @@ orbit learning prune [--stale-only]       # report or delete stale learnings
 {
   "results": [
     {
-      "id": "L20260509-0001",
+      "id": "L-0001",
       "summary": "Never declare a perf win on latency alone — ...",
       "tags": ["performance", "benchmarking"],
       "matched_by": ["path:crates/orbit-knowledge/src/graph_bench.rs", "tag:performance"],
@@ -296,7 +296,7 @@ When an agent finds an existing learning that covers a duplicate concern, it rec
 
 ```jsonc
 {
-  "learning_id": "L20260509-0001",
+  "learning_id": "L-0001",
   "voter_model": "claude",
   "voted_at": "2026-05-17T12:00:00Z",
   "task_id": "ORB-00095"
@@ -358,7 +358,7 @@ The bar for authoring: the knowledge must be **non-obvious** (otherwise it lives
 When a learning is replaced by a clearer or more current entry:
 
 ```
-orbit learning supersede L20260509-0001 --with L20260601-0042
+orbit learning supersede L-0001 --with L-0042
 ```
 
 Both records update atomically. The old record's `status` flips to `superseded` and gains a `superseded_by` field; the new record's `supersedes` field points back. Superseded records are excluded from injection but retained on disk for history.
